@@ -25,9 +25,20 @@ public class GridTile : MonoBehaviour
 
     private SpriteRenderer _spriteRenderer;
     private GameObject _selectionHalo;
+    private Road _road;
+    private GameObject _occupyingBuilding;
 
     public Vector2Int GridPosition { get; private set; }
-    public GameObject OccupyingBuilding { get; set; }
+    public GameObject OccupyingBuilding
+    {
+        get => _occupyingBuilding;
+        set
+        {
+            _occupyingBuilding = value;
+            RefreshRoadVisual();
+            RefreshAdjacentRoadVisuals();
+        }
+    }
     public Unit OccupyingUnit { get; set; }
     public bool HasRoad { get; private set; }
     public bool IsPendingRoad { get; set; }
@@ -95,20 +106,73 @@ public class GridTile : MonoBehaviour
 
         HasRoad = true;
         IsPendingRoad = false;
-        
-        // Create a visual for the road
-        GameObject roadObj = new GameObject("RoadVisual");
-        roadObj.transform.SetParent(transform);
-        roadObj.transform.localPosition = new Vector3(0, 0, -0.05f); // Slightly above the tile but below units/buildings
-        roadObj.transform.localScale = new Vector3(0.8f, 0.8f, 1f);
-        
-        SpriteRenderer sr = roadObj.AddComponent<SpriteRenderer>();
-        // Use the same sprite as the tile if possible, or just a square
-        sr.sprite = _spriteRenderer.sprite; 
-        sr.color = new Color(0.4f, 0.4f, 0.45f, 1f); // Dark grey road color
-        sr.sortingOrder = _spriteRenderer.sortingOrder; // Match tile sorting, but slightly in front due to Z
-        
-        roadObj.AddComponent<Road>();
+        RefreshRoadVisual();
+        RefreshAdjacentRoadVisuals();
+    }
+
+    public Vector3 GetVisualCenter()
+    {
+        EnsureComponents();
+        if (_spriteRenderer != null) return _spriteRenderer.bounds.center;
+
+        return transform.position;
+    }
+
+    private void RefreshRoadVisual()
+    {
+        bool shouldRenderRoad = HasRoad || (HasBuilding && HasAdjacentRoad());
+
+        if (!shouldRenderRoad)
+        {
+            if (_road != null)
+            {
+                Destroy(_road.gameObject);
+                _road = null;
+            }
+            return;
+        }
+
+        if (_road == null)
+        {
+            GameObject roadObj = new GameObject("RoadVisual");
+            roadObj.transform.SetParent(transform);
+            roadObj.transform.localPosition = new Vector3(0, 0, -0.05f);
+            TileObjectScale.ApplyTo(roadObj);
+            _road = roadObj.AddComponent<Road>();
+        }
+
+        if (_road != null)
+        {
+            _road.Configure(this);
+        }
+    }
+
+    private void RefreshAdjacentRoadVisuals()
+    {
+        if (SquareGridGenerator.Instance == null) return;
+
+        foreach (GridTile neighbor in SquareGridGenerator.Instance.GetNeighbors(this))
+        {
+            if (neighbor != null)
+            {
+                neighbor.RefreshRoadVisual();
+            }
+        }
+    }
+
+    private bool HasAdjacentRoad()
+    {
+        if (SquareGridGenerator.Instance == null) return false;
+
+        foreach (GridTile neighbor in SquareGridGenerator.Instance.GetNeighbors(this))
+        {
+            if (neighbor != null && neighbor.HasRoad)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private void OnMouseEnter()

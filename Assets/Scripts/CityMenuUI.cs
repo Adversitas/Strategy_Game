@@ -14,6 +14,10 @@ public class CityMenuUI : MonoBehaviour
     [SerializeField] private GameObject scoutPrefab;
     [SerializeField] private GameObject citizenPrefab;
     [SerializeField] private GameObject courierPrefab;
+    [SerializeField] private GameObject facilityPrefab;
+    [SerializeField] private GameObject marketPrefab;
+    [SerializeField] private GameObject cityPrefab;
+    [SerializeField] private GameObject constructionProjectPrefab;
 
     private Canvas _canvas;
     private RectTransform _panel;
@@ -21,9 +25,14 @@ public class CityMenuUI : MonoBehaviour
     private Text _productionLabel;
     private Text _foodLabel;
     private Text _citizenLabel;
+    private Text _queueLabel;
     private GameObject _produceScoutBtn;
     private GameObject _produceCitizenBtn;
     private GameObject _produceCourierBtn;
+    private GameObject _queueFacilityBtn;
+    private GameObject _queueMarketBtn;
+    private GameObject _queueRoadBtn;
+    private GameObject _queueCityBtn;
     
     private City _currentCity;
     private Facility _currentFacility;
@@ -51,6 +60,10 @@ public class CityMenuUI : MonoBehaviour
         if (scoutPrefab == null) scoutPrefab = Resources.Load<GameObject>("Scout");
         if (citizenPrefab == null) citizenPrefab = Resources.Load<GameObject>("Citizen");
         if (courierPrefab == null) courierPrefab = Resources.Load<GameObject>("Courier");
+        if (facilityPrefab == null) facilityPrefab = Resources.Load<GameObject>("Facility");
+        if (marketPrefab == null) marketPrefab = Resources.Load<GameObject>("Market");
+        if (cityPrefab == null) cityPrefab = Resources.Load<GameObject>("City");
+        if (constructionProjectPrefab == null) constructionProjectPrefab = Resources.Load<GameObject>("ConstructionProject");
         BuildUI();
         HideImmediate();
     }
@@ -82,30 +95,29 @@ public class CityMenuUI : MonoBehaviour
         _productionLabel.text = $"PRODUCTION: {Mathf.FloorToInt(_currentCity.ProductionStockpile)} / {_currentCity.MaxProductionStockpile}";
         _foodLabel.text = $"FOOD: {Mathf.FloorToInt(_currentCity.FoodStockpile)} / {Mathf.FloorToInt(_currentCity.FoodToNextCitizen)} (NEXT SLOT)";
         _citizenLabel.text = $"CITIZENS: {_currentCity.CurrentCitizens} / {_currentCity.CitizenCapacity}";
+        _queueLabel.text = $"BUILD QUEUE: {_currentCity.QueuedBuildCount}  |  UNIT QUEUE: {_currentCity.QueuedUnitCount}  |  SPEND/TURN: {Mathf.FloorToInt(_currentCity.ProductionSpendThresholdPerTurn)}";
         
         SetProductionButtonsActive(true);
 
         if (_produceScoutBtn != null)
         {
-            bool canAfford = _currentCity.CanAffordProduction(20);
-            _produceScoutBtn.GetComponent<Button>().interactable = canAfford;
-            _produceScoutBtn.GetComponent<Image>().color = canAfford ? ButtonNormal : new Color(0.1f, 0.1f, 0.1f, 0.5f);
+            _produceScoutBtn.GetComponent<Button>().interactable = scoutPrefab != null;
+            _produceScoutBtn.GetComponent<Image>().color = scoutPrefab != null ? ButtonNormal : new Color(0.1f, 0.1f, 0.1f, 0.5f);
         }
 
         if (_produceCitizenBtn != null)
         {
-            bool canAfford = _currentCity.CanAffordProduction(10);
             bool hasCapacity = _currentCity.HasCitizenCapacity();
             Button btn = _produceCitizenBtn.GetComponent<Button>();
-            btn.interactable = canAfford && hasCapacity;
-            _produceCitizenBtn.GetComponent<Image>().color = (canAfford && hasCapacity) ? ButtonNormal : new Color(0.1f, 0.1f, 0.1f, 0.5f);
+            bool canQueue = citizenPrefab != null && hasCapacity;
+            btn.interactable = canQueue;
+            _produceCitizenBtn.GetComponent<Image>().color = canQueue ? ButtonNormal : new Color(0.1f, 0.1f, 0.1f, 0.5f);
         }
 
         if (_produceCourierBtn != null)
         {
-            bool canAfford = _currentCity.CanAffordProduction(15);
-            _produceCourierBtn.GetComponent<Button>().interactable = canAfford;
-            _produceCourierBtn.GetComponent<Image>().color = canAfford ? ButtonNormal : new Color(0.1f, 0.1f, 0.1f, 0.5f);
+            _produceCourierBtn.GetComponent<Button>().interactable = courierPrefab != null;
+            _produceCourierBtn.GetComponent<Image>().color = courierPrefab != null ? ButtonNormal : new Color(0.1f, 0.1f, 0.1f, 0.5f);
         }
     }
 
@@ -114,6 +126,7 @@ public class CityMenuUI : MonoBehaviour
         _productionLabel.text = $"STOCKPILE: {Mathf.FloorToInt(_currentFacility.ProductionStockpile)} / {_currentFacility.MaxProductionStockpile}";
         _foodLabel.text = $"LINKED TO CITY: {(_currentFacility.IsConnectedToCity ? "YES" : "NO")}";
         _citizenLabel.text = "";
+        _queueLabel.text = "";
         SetProductionButtonsActive(false);
     }
 
@@ -122,6 +135,10 @@ public class CityMenuUI : MonoBehaviour
         if (_produceScoutBtn != null) _produceScoutBtn.SetActive(active);
         if (_produceCitizenBtn != null) _produceCitizenBtn.SetActive(active);
         if (_produceCourierBtn != null) _produceCourierBtn.SetActive(active);
+        if (_queueFacilityBtn != null) _queueFacilityBtn.SetActive(active);
+        if (_queueMarketBtn != null) _queueMarketBtn.SetActive(active);
+        if (_queueRoadBtn != null) _queueRoadBtn.SetActive(active);
+        if (_queueCityBtn != null) _queueCityBtn.SetActive(active);
     }
 
     private void HandleTileSelected(GridTile tile)
@@ -159,30 +176,70 @@ public class CityMenuUI : MonoBehaviour
         ProduceUnit(citizenPrefab, 10, "Citizen", true);
     }
     private void ProduceCourier() => ProduceUnit(courierPrefab, 15, "Courier", true);
+    private void QueueFacility()
+    {
+        if (_currentCity == null || facilityPrefab == null || constructionProjectPrefab == null) return;
+        City city = _currentCity;
+
+        PlacementManager.Instance.StartPlacement(facilityPrefab, (tile) =>
+        {
+            if (GameplayCommandService.TryQueueCityConstruction(city, tile, constructionProjectPrefab, facilityPrefab))
+            {
+                Debug.Log($"[CityMenuUI] Queued facility at {tile.GridPosition} from {city.name}");
+            }
+        });
+        SlideOut();
+    }
+
+    private void QueueRoad()
+    {
+        if (_currentCity == null) return;
+        City city = _currentCity;
+
+        PlacementManager.Instance.StartPlacement(null, (tile) =>
+        {
+            if (GameplayCommandService.TryQueueCityRoad(city, tile))
+            {
+                Debug.Log($"[CityMenuUI] Queued road at {tile.GridPosition} from {city.name}");
+            }
+        });
+        SlideOut();
+    }
+
+    private void QueueMarket()
+    {
+        if (_currentCity == null || marketPrefab == null || constructionProjectPrefab == null) return;
+        City city = _currentCity;
+
+        PlacementManager.Instance.StartPlacement(marketPrefab, (tile) =>
+        {
+            if (GameplayCommandService.TryQueueCityConstruction(city, tile, constructionProjectPrefab, marketPrefab))
+            {
+                Debug.Log($"[CityMenuUI] Queued market at {tile.GridPosition} from {city.name}");
+            }
+        });
+        SlideOut();
+    }
+
+    private void QueueFoundCity()
+    {
+        if (_currentCity == null || cityPrefab == null) return;
+        City city = _currentCity;
+
+        GameObject constructionPrefab = constructionProjectPrefab != null ? constructionProjectPrefab : cityPrefab;
+        PlacementManager.Instance.StartPlacement(cityPrefab, (tile) =>
+        {
+            if (GameplayCommandService.TryQueueCityConstruction(city, tile, constructionPrefab, cityPrefab))
+            {
+                Debug.Log($"[CityMenuUI] Queued city foundation at {tile.GridPosition} from {city.name}");
+            }
+        });
+        SlideOut();
+    }
 
     private void ProduceUnit(GameObject prefab, float cost, string unitName, bool isProduction)
     {
-        if (_currentCity == null || prefab == null) return;
-        bool canAfford = isProduction ? _currentCity.CanAffordProduction(cost) : _currentCity.CanAffordFood(cost);
-        if (!canAfford) return;
-
-        if (_currentCity.AssignedTile != null && _currentCity.AssignedTile.HasUnit) return;
-
-        GameObject unitGO = Instantiate(prefab);
-        unitGO.name = unitName;
-        Unit unit = unitGO.GetComponent<Unit>();
-        
-        if (unit != null && _currentCity.AssignedTile != null)
-        {
-            if (isProduction) _currentCity.DeductProduction(cost);
-            else _currentCity.DeductFood(cost);
-            
-            if (unitName == "Citizen") _currentCity.RegisterCitizen();
-            if (unit is Courier courier) courier.OriginCity = _currentCity;
-            
-            unit.PlaceOnTile(_currentCity.AssignedTile);
-        }
-        else if (unitGO != null) Destroy(unitGO);
+        GameplayCommandService.TryProduceUnit(_currentCity, prefab, cost, unitName, isProduction);
     }
 
     private void SlideIn()
@@ -284,10 +341,15 @@ public class CityMenuUI : MonoBehaviour
         _productionLabel = CreateLabel(contentGO, "ProductionLabel", "PRODUCTION", 18, TextWhite);
         _foodLabel = CreateLabel(contentGO, "FoodLabel", "FOOD", 18, TextWhite);
         _citizenLabel = CreateLabel(contentGO, "CitizenLabel", "CITIZENS", 16, TextMuted);
+        _queueLabel = CreateLabel(contentGO, "QueueLabel", "BUILD QUEUE: 0", 16, TextMuted);
         
         _produceScoutBtn = CreateButton(contentGO, "PRODUCE SCOUT (20)", ProduceScout);
         _produceCitizenBtn = CreateButton(contentGO, "PRODUCE CITIZEN (10)", ProduceCitizen);
         _produceCourierBtn = CreateButton(contentGO, "PRODUCE COURIER (15)", ProduceCourier);
+        _queueFacilityBtn = CreateButton(contentGO, "QUEUE FACILITY", QueueFacility);
+        _queueMarketBtn = CreateButton(contentGO, "QUEUE MARKET", QueueMarket);
+        _queueRoadBtn = CreateButton(contentGO, "QUEUE ROAD", QueueRoad);
+        _queueCityBtn = CreateButton(contentGO, "QUEUE CITY", QueueFoundCity);
     }
 
     private static readonly Color ButtonNormal     = new Color(0.2f, 0.2f, 0.25f, 1f);
@@ -315,13 +377,14 @@ public class CityMenuUI : MonoBehaviour
         Text t = textGO.AddComponent<Text>();
         t.text = label;
         t.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        t.fontSize = 16 * 5; // Crisp Text Hack
+        t.fontSize = 16;
         t.color = TextWhite;
         t.alignment = TextAnchor.MiddleCenter;
-        t.horizontalOverflow = HorizontalWrapMode.Overflow;
-        t.verticalOverflow = VerticalWrapMode.Overflow;
-
-        textGO.transform.localScale = Vector3.one * 0.2f;
+        t.horizontalOverflow = HorizontalWrapMode.Wrap;
+        t.verticalOverflow = VerticalWrapMode.Truncate;
+        t.resizeTextForBestFit = true;
+        t.resizeTextMinSize = 11;
+        t.resizeTextMaxSize = 16;
         return btnGO;
     }
 
@@ -330,18 +393,18 @@ public class CityMenuUI : MonoBehaviour
         GameObject go = new GameObject(name);
         go.transform.SetParent(parent.transform, false);
         
-        // Crisp Text Hack
         Text t = go.AddComponent<Text>();
         t.text = text;
         t.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        t.fontSize = size * 5;
+        t.fontSize = size;
         t.color = color;
         t.fontStyle = style;
         t.alignment = TextAnchor.MiddleCenter;
-        t.horizontalOverflow = HorizontalWrapMode.Overflow;
-        t.verticalOverflow = VerticalWrapMode.Overflow;
-
-        go.transform.localScale = Vector3.one * 0.2f;
+        t.horizontalOverflow = HorizontalWrapMode.Wrap;
+        t.verticalOverflow = VerticalWrapMode.Truncate;
+        t.resizeTextForBestFit = true;
+        t.resizeTextMinSize = Mathf.Max(10, size - 6);
+        t.resizeTextMaxSize = size;
 
         return t;
     }

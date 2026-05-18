@@ -14,6 +14,8 @@ public class UnitMenuUI : MonoBehaviour
 
     [Header("Prefabs")]
     [SerializeField] private GameObject facilityPrefab;
+    [SerializeField] private GameObject cityPrefab;
+    [SerializeField] private GameObject constructionProjectPrefab;
 
     private Canvas _canvas;
     private RectTransform _panel;
@@ -23,7 +25,10 @@ public class UnitMenuUI : MonoBehaviour
     private Text _ordersLabel;
     private GameObject _buildFacilityBtn;
     private GameObject _buildRoadBtn;
+    private GameObject _foundCityBtn;
     private GameObject _chooseDestinationBtn;
+    private GameObject _toggleRepeatBtn;
+    private GameObject _toggleOrderBtn;
     private GameObject _destinationPanel;
     private Transform _destinationContent;
     
@@ -51,6 +56,8 @@ public class UnitMenuUI : MonoBehaviour
     {
         Instance = this;
         if (facilityPrefab == null) facilityPrefab = Resources.Load<GameObject>("Facility");
+        if (cityPrefab == null) cityPrefab = Resources.Load<GameObject>("City");
+        if (constructionProjectPrefab == null) constructionProjectPrefab = Resources.Load<GameObject>("ConstructionProject");
         BuildUI();
         _isOpen = false;
         HideImmediate();
@@ -85,10 +92,21 @@ public class UnitMenuUI : MonoBehaviour
             _unitNameLabel.text = _selectedUnit.name.ToUpper();
             UpdateStatsUI();
             
-            bool isCitizen = _selectedUnit is Citizen;
-            if (_buildFacilityBtn != null) _buildFacilityBtn.SetActive(isCitizen);
-            if (_buildRoadBtn != null) _buildRoadBtn.SetActive(isCitizen);
-            if (_chooseDestinationBtn != null) _chooseDestinationBtn.SetActive(_selectedUnit is Courier);
+            bool isCourier = _selectedUnit is Courier;
+            bool isMilitary = _selectedUnit.IsMilitary;
+            Debug.Log($"[UnitMenuUI] Selected unit: {_selectedUnit.name}, type={_selectedUnit.GetType().Name}, isCourier={isCourier}, tile={tile.GridPosition}");
+            SetActionButtonVisible(_buildFacilityBtn, false);
+            SetActionButtonVisible(_buildRoadBtn, false);
+            SetActionButtonVisible(_foundCityBtn, false);
+            if (_chooseDestinationBtn != null)
+            {
+                SetActionButtonVisible(_chooseDestinationBtn, isCourier);
+                Debug.Log($"[UnitMenuUI] Choose Destination button active={_chooseDestinationBtn.activeSelf}");
+            }
+            SetActionButtonVisible(_toggleRepeatBtn, isCourier);
+            SetActionButtonVisible(_toggleOrderBtn, isMilitary);
+            RefreshCourierButtons();
+            RefreshOrderButton();
 
             if (!_isOpen) SlideIn();
         }
@@ -96,6 +114,32 @@ public class UnitMenuUI : MonoBehaviour
         {
             _selectedUnit = null;
             if (_isOpen) SlideOut();
+        }
+    }
+
+    private void RefreshCourierButtons()
+    {
+        if (!(_selectedUnit is Courier courier)) return;
+
+        SetButtonLabel(_toggleRepeatBtn, courier.RepeatEnabled ? "REPEAT: ON" : "REPEAT: OFF");
+    }
+
+    private void RefreshOrderButton()
+    {
+        if (_selectedUnit == null || !_selectedUnit.IsMilitary) return;
+
+        SetButtonLabel(_toggleOrderBtn, $"ORDER: {_selectedUnit.CurrentRoamOrderLabel.ToUpper()}");
+    }
+
+    private void SetActionButtonVisible(GameObject button, bool visible)
+    {
+        if (button == null) return;
+
+        button.SetActive(visible);
+        LayoutElement layout = button.GetComponent<LayoutElement>();
+        if (layout != null)
+        {
+            layout.ignoreLayout = !visible;
         }
     }
 
@@ -115,11 +159,11 @@ public class UnitMenuUI : MonoBehaviour
             invText += "EMPTY";
         _inventoryLabel.text = invText;
 
-        string ordersText = "ACTIVE ORDERS: ";
+        string ordersText = _selectedUnit.IsMilitary
+            ? $"ROAM ORDER: {_selectedUnit.CurrentRoamOrderLabel.ToUpper()}"
+            : "ORDERS: AUTOMATED";
         if (_selectedUnit.ActiveOrders.Count > 0)
-            ordersText += string.Join(", ", _selectedUnit.ActiveOrders.Select(o => o.orderName));
-        else
-            ordersText += "NONE";
+            ordersText += $"  |  QUEUED: {string.Join(", ", _selectedUnit.ActiveOrders.Select(o => o.orderName))}";
         _ordersLabel.text = ordersText;
     }
 
@@ -128,8 +172,10 @@ public class UnitMenuUI : MonoBehaviour
         if (_selectedUnit is Citizen citizen && facilityPrefab != null)
         {
             PlacementManager.Instance.StartPlacement(facilityPrefab, (tile) => {
-                citizen.StartConstruction(tile, facilityPrefab);
-                Debug.Log($"[UnitMenuUI] Construction order started for {citizen.name} at {tile.GridPosition}");
+                if (GameplayCommandService.TryQueueConstruction(citizen, tile, constructionProjectPrefab, facilityPrefab))
+                {
+                    Debug.Log($"[UnitMenuUI] Construction order started for {citizen.name} at {tile.GridPosition}");
+                }
             });
             SlideOut();
         }
@@ -140,33 +186,130 @@ public class UnitMenuUI : MonoBehaviour
         if (_selectedUnit is Citizen citizen)
         {
             PlacementManager.Instance.StartPlacement(null, (tile) => {
-                tile.IsPendingRoad = true;
-                citizen.StartConstruction(tile, null);
-                Debug.Log($"[UnitMenuUI] Road construction order started for {citizen.name} at {tile.GridPosition}");
+                if (GameplayCommandService.TryQueueRoad(citizen, tile))
+                {
+                    Debug.Log($"[UnitMenuUI] Road construction order started for {citizen.name} at {tile.GridPosition}");
+                }
             });
             SlideOut();
         }
     }
 
+    private void FoundCity()
+    {
+        GameObject prefabToPlace = constructionProjectPrefab != null ? constructionProjectPrefab : cityPrefab;
+
+        if (_selectedUnit is Citizen citizen && prefabToPlace != null)
+        {
+            PlacementManager.Instance.StartPlacement(cityPrefab, (tile) => {
+                if (GameplayCommandService.TryQueueConstruction(citizen, tile, prefabToPlace, cityPrefab))
+                {
+                    Debug.Log($"[UnitMenuUI] City foundation order started for {citizen.name} at {tile.GridPosition}");
+                }
+            });
+            SlideOut();
+        }
+    }
+
+    private void ToggleCourierRepeat()
+    {
+        if (_selectedUnit is not Courier courier) return;
+
+        courier.ToggleRepeat();
+        RefreshCourierButtons();
+    }
+
+    private void ToggleUnitOrder()
+    {
+        if (_selectedUnit == null || !_selectedUnit.IsMilitary) return;
+
+        _selectedUnit.CycleRoamOrderMode();
+        RefreshOrderButton();
+        UpdateStatsUI();
+    }
+
     private void ToggleDestinationMenu()
     {
-        if (_destinationPanel == null) return;
+        Debug.Log($"[UnitMenuUI] Choose Destination clicked. selected={(_selectedUnit != null ? _selectedUnit.name : "NULL")}, type={(_selectedUnit != null ? _selectedUnit.GetType().Name : "NULL")}");
+        if (_destinationPanel == null)
+        {
+            Debug.LogWarning("[UnitMenuUI] Cannot open destination menu because _destinationPanel is null.");
+            return;
+        }
         bool show = !_destinationPanel.activeSelf;
+        Debug.Log($"[UnitMenuUI] Destination panel show={show}");
         _destinationPanel.SetActive(show);
         if (show) PopulateDestinationMenu();
     }
 
     private void PopulateDestinationMenu()
     {
-        if (_destinationContent == null) return;
+        if (_destinationContent == null)
+        {
+            Debug.LogWarning("[UnitMenuUI] _destinationContent is null. Trying to recover it from DestinationPanel.");
+            RecoverDestinationContent();
+        }
+
+        if (_destinationContent == null)
+        {
+            Debug.LogError("[UnitMenuUI] Cannot populate destination menu because _destinationContent is still null.");
+            return;
+        }
+
         foreach (Transform child in _destinationContent) Destroy(child.gameObject);
 
-        IGridTarget[] destinations = FindObjectsByType<MonoBehaviour>(FindObjectsSortMode.None)
+        Debug.Log("[UnitMenuUI] Populating courier destination menu...");
+
+        List<IGridTarget> destinations = FindObjectsByType<MonoBehaviour>(FindObjectsSortMode.None)
             .OfType<IGridTarget>()
             .Where(t => !(t is Unit))
-            .ToArray();
+            .ToList();
 
-        if (destinations.Length == 0)
+        Debug.Log($"[UnitMenuUI] IGridTarget scene scan found {destinations.Count} non-unit target(s).");
+
+        if (AssetRegistry.Instance != null)
+        {
+            Debug.Log($"[UnitMenuUI] AssetRegistry has {AssetRegistry.Instance.ConstructionProjects.Count} construction project(s).");
+            destinations.AddRange(AssetRegistry.Instance.ConstructionProjects);
+        }
+        else
+        {
+            Debug.LogWarning("[UnitMenuUI] AssetRegistry.Instance is null while populating destinations.");
+        }
+
+        ConstructionProject[] sceneProjects = FindObjectsByType<ConstructionProject>(FindObjectsSortMode.None);
+        Debug.Log($"[UnitMenuUI] Direct ConstructionProject scan found {sceneProjects.Length} project(s).");
+        foreach (ConstructionProject project in sceneProjects)
+        {
+            Debug.Log($"[UnitMenuUI] Project candidate: name={project.name}, assignedTile={(project.AssignedTile != null ? project.AssignedTile.GridPosition.ToString() : "NULL")}, position={project.transform.position}");
+        }
+        destinations.AddRange(sceneProjects);
+
+        int tileBuildingTargets = 0;
+        foreach (GridTile tile in FindObjectsByType<GridTile>(FindObjectsSortMode.None))
+        {
+            IGridTarget buildingTarget = tile.OccupyingBuilding != null
+                ? tile.OccupyingBuilding.GetComponents<MonoBehaviour>().OfType<IGridTarget>().FirstOrDefault()
+                : null;
+
+            if (buildingTarget != null)
+            {
+                tileBuildingTargets++;
+                Debug.Log($"[UnitMenuUI] Tile target candidate: {buildingTarget.GetType().Name} at {tile.GridPosition}, object={tile.OccupyingBuilding.name}");
+                destinations.Add(buildingTarget);
+            }
+        }
+
+        Debug.Log($"[UnitMenuUI] Tile OccupyingBuilding scan found {tileBuildingTargets} target(s). Candidate total before filtering: {destinations.Count}.");
+
+        destinations = destinations
+            .Where(IsValidDestinationCandidate)
+            .Distinct()
+            .ToList();
+
+        Debug.Log($"[UnitMenuUI] Destination count after filtering/distinct: {destinations.Count}.");
+
+        if (destinations.Count == 0)
         {
             CreateLabel(_destinationContent.gameObject, "NoDest", "NO DESTINATIONS FOUND", 14, TextMuted);
             return;
@@ -174,19 +317,124 @@ public class UnitMenuUI : MonoBehaviour
 
         foreach (var dest in destinations)
         {
-            GridTile tile = dest.AssignedTile;
+            GridTile tile = GetDestinationTile(dest);
             if (tile == null) continue;
 
-            string label = $"{dest.GetType().Name.ToUpper()} AT ({tile.GridPosition.x}, {tile.GridPosition.y})";
+            string label = $"{GetDestinationLabel(dest)} AT ({tile.GridPosition.x}, {tile.GridPosition.y})";
             CreateButton(_destinationContent.gameObject, label, () => {
                 if (_selectedUnit is Courier courier)
                 {
-                    courier.TargetDestination = dest;
-                    Debug.Log($"[UnitMenuUI] Destination set for {courier.name}");
+                    if (GameplayCommandService.TryAssignCourierDestination(courier, dest))
+                    {
+                        Debug.Log($"[UnitMenuUI] Destination set for {courier.name}");
+                    }
                 }
                 _destinationPanel.SetActive(false);
             });
         }
+    }
+
+    private void RecoverDestinationContent()
+    {
+        if (_destinationPanel == null) return;
+
+        Transform scrollArea = _destinationPanel.transform.Find("ScrollArea");
+        Transform content = scrollArea != null ? scrollArea.Find("Content") : null;
+        if (content != null)
+        {
+            _destinationContent = content;
+            Debug.Log("[UnitMenuUI] Recovered destination content transform.");
+        }
+    }
+
+    private bool IsValidDestinationCandidate(IGridTarget destination)
+    {
+        if (destination == null)
+        {
+            Debug.LogWarning("[UnitMenuUI] Rejected destination: null target.");
+            return false;
+        }
+
+        if (destination is Unit)
+        {
+            Debug.Log($"[UnitMenuUI] Rejected destination: {destination.GetType().Name} is a unit.");
+            return false;
+        }
+
+        GridTile tile = GetDestinationTile(destination);
+        if (tile == null)
+        {
+            MonoBehaviour behaviour = destination as MonoBehaviour;
+            string objectName = behaviour != null ? behaviour.name : destination.GetType().Name;
+            Debug.LogWarning($"[UnitMenuUI] Rejected destination: {destination.GetType().Name} '{objectName}' has no resolvable tile.");
+            return false;
+        }
+
+        Debug.Log($"[UnitMenuUI] Accepted destination: {GetDestinationLabel(destination)} at {tile.GridPosition}.");
+        return true;
+    }
+
+    private GridTile GetDestinationTile(IGridTarget destination)
+    {
+        if (destination == null) return null;
+        if (destination.AssignedTile != null) return destination.AssignedTile;
+
+        MonoBehaviour behaviour = destination as MonoBehaviour;
+        if (behaviour == null) return null;
+
+        foreach (GridTile tile in FindObjectsByType<GridTile>(FindObjectsSortMode.None))
+        {
+            if (tile.OccupyingBuilding == behaviour.gameObject)
+            {
+                if (destination is ConstructionProject project)
+                {
+                    project.AssignedTile = tile;
+                }
+
+                return tile;
+            }
+        }
+
+        if (destination is ConstructionProject constructionProject)
+        {
+            GridTile nearestTile = FindNearestTile(behaviour.transform.position);
+            if (nearestTile != null)
+            {
+                constructionProject.AssignedTile = nearestTile;
+                if (nearestTile.OccupyingBuilding == null)
+                {
+                    nearestTile.OccupyingBuilding = behaviour.gameObject;
+                }
+            }
+
+            return nearestTile;
+        }
+
+        return null;
+    }
+
+    private GridTile FindNearestTile(Vector3 worldPosition)
+    {
+        GridTile nearestTile = null;
+        float nearestDistance = float.MaxValue;
+
+        foreach (GridTile tile in FindObjectsByType<GridTile>(FindObjectsSortMode.None))
+        {
+            float distance = Vector2.SqrMagnitude((Vector2)(tile.GetVisualCenter() - worldPosition));
+            if (distance < nearestDistance)
+            {
+                nearestDistance = distance;
+                nearestTile = tile;
+            }
+        }
+
+        return nearestTile;
+    }
+
+    private string GetDestinationLabel(IGridTarget destination)
+    {
+        if (destination is ConstructionProject) return "CONSTRUCTION PROJECT";
+        return destination.GetType().Name.ToUpper();
     }
 
     private void SlideIn()
@@ -269,7 +517,10 @@ public class UnitMenuUI : MonoBehaviour
 
         _buildFacilityBtn = CreateButton(panelGO, "BUILD FACILITY", BuildFacility);
         _buildRoadBtn = CreateButton(panelGO, "BUILD ROAD", BuildRoad);
+        _foundCityBtn = CreateButton(panelGO, "FOUND CITY", FoundCity);
         _chooseDestinationBtn = CreateButton(panelGO, "CHOOSE DESTINATION", ToggleDestinationMenu);
+        _toggleRepeatBtn = CreateButton(panelGO, "REPEAT: OFF", ToggleCourierRepeat);
+        _toggleOrderBtn = CreateButton(panelGO, "ORDER: FREE ROAM", ToggleUnitOrder);
 
         // Destination Panel
         GameObject destPanelGO = new GameObject("DestinationPanel");
@@ -318,7 +569,10 @@ public class UnitMenuUI : MonoBehaviour
         le.preferredHeight = 50; le.preferredWidth = 150;
         btnGO.AddComponent<Image>().color = ButtonNormal;
         Button btn = btnGO.AddComponent<Button>();
-        btn.onClick.AddListener(action);
+        btn.onClick.AddListener(() => {
+            Debug.Log($"[UnitMenuUI] Button clicked: {label}");
+            action.Invoke();
+        });
         GameObject textGO = new GameObject("Text");
         textGO.transform.SetParent(btnGO.transform, false);
         RectTransform rt = textGO.AddComponent<RectTransform>();
@@ -326,15 +580,29 @@ public class UnitMenuUI : MonoBehaviour
         Text t = textGO.AddComponent<Text>();
         t.text = label;
         t.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        t.fontSize = 14 * 5; // Crisp Text Hack
+        t.fontSize = 14;
         t.color = TextWhite;
         t.alignment = TextAnchor.MiddleCenter;
-        t.horizontalOverflow = HorizontalWrapMode.Overflow;
-        t.verticalOverflow = VerticalWrapMode.Overflow;
-
-        textGO.transform.localScale = Vector3.one * 0.2f;
+        t.horizontalOverflow = HorizontalWrapMode.Wrap;
+        t.verticalOverflow = VerticalWrapMode.Truncate;
+        t.resizeTextForBestFit = true;
+        t.resizeTextMinSize = 10;
+        t.resizeTextMaxSize = 14;
         
         return btnGO;
+    }
+
+    private void SetButtonLabel(GameObject button, string label)
+    {
+        if (button == null) return;
+
+        Text text = button.GetComponentInChildren<Text>();
+        if (text != null)
+        {
+            text.text = label;
+        }
+
+        button.name = label;
     }
 
     private Text CreateLabel(GameObject parent, string name, string text, int size, Color color, FontStyle style = FontStyle.Normal)
@@ -342,18 +610,18 @@ public class UnitMenuUI : MonoBehaviour
         GameObject go = new GameObject(name);
         go.transform.SetParent(parent.transform, false);
         
-        // Crisp Text Hack
         Text t = go.AddComponent<Text>();
         t.text = text;
         t.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        t.fontSize = size * 5;
+        t.fontSize = size;
         t.color = color;
         t.fontStyle = style;
         t.alignment = TextAnchor.MiddleLeft;
-        t.horizontalOverflow = HorizontalWrapMode.Overflow;
-        t.verticalOverflow = VerticalWrapMode.Overflow;
-
-        go.transform.localScale = Vector3.one * 0.2f;
+        t.horizontalOverflow = HorizontalWrapMode.Wrap;
+        t.verticalOverflow = VerticalWrapMode.Truncate;
+        t.resizeTextForBestFit = true;
+        t.resizeTextMinSize = Mathf.Max(10, size - 6);
+        t.resizeTextMaxSize = size;
 
         LayoutElement le = go.AddComponent<LayoutElement>();
         le.preferredWidth = 200;

@@ -7,11 +7,18 @@ using System.Collections.Generic;
 /// </summary>
 public class Unit : MonoBehaviour, IGridTarget
 {
+    public enum RoamOrderMode
+    {
+        FreeRoam,
+        PatrolRoam
+    }
+
     public GridTile AssignedTile => CurrentTile;
     [Header("Core Attributes")]
     [SerializeField] protected int strength = 1;
     [SerializeField] protected int constitution = 1;
     [SerializeField] protected int dexterity = 1;
+    [SerializeField] protected int agility = 1;
     [SerializeField] protected int charisma = 1;
     [SerializeField] protected bool isMilitary = false;
 
@@ -33,18 +40,23 @@ public class Unit : MonoBehaviour, IGridTarget
     [Header("Orders & Policies")]
     [SerializeField] private int maxOrderSlots = 1;
     [SerializeField] private List<Order> activeOrders = new List<Order>();
+    [SerializeField] private RoamOrderMode roamOrderMode = RoamOrderMode.FreeRoam;
+
+    [Header("Combat Awareness")]
+    [SerializeField] private Unit detectedEnemy;
 
     [Header("Setup & Behavior")]
     [SerializeField] private Vector2Int startingGridPosition;
     [SerializeField] protected bool autoMove = true;
 
     // Current location on the grid
-    public GridTile CurrentTile { get; private set; }
+    public GridTile CurrentTile { get; protected set; }
 
     // Public properties
     public int Strength => strength;
     public int Constitution => constitution;
     public int Dexterity => dexterity;
+    public int Agility => agility;
     public int Charisma => charisma;
     public int Range => range;
     public int Attack => attack;
@@ -58,10 +70,18 @@ public class Unit : MonoBehaviour, IGridTarget
     public int MaxOrderSlots => maxOrderSlots;
     public IReadOnlyList<Order> ActiveOrders => activeOrders;
     public bool IsMilitary => isMilitary;
+    public Unit DetectedEnemy => detectedEnemy;
+    public RoamOrderMode CurrentRoamOrderMode => roamOrderMode;
+    public string CurrentRoamOrderLabel => roamOrderMode == RoamOrderMode.PatrolRoam ? "Patrol Roam" : "Free Roam";
 
     protected virtual void Awake()
     {
         CalculateDerivedStats();
+    }
+
+    protected virtual void Update()
+    {
+        RegenerateMovementOverTime(Time.deltaTime);
     }
 
     protected virtual void Start()
@@ -104,51 +124,182 @@ public class Unit : MonoBehaviour, IGridTarget
     {
         while (true)
         {
-            yield return new WaitForSeconds(5f);
-            
-            // Restore movement points before starting the wander
-            ResetMovement();
-            
-            // Continue moving randomly until we run out of points or get stuck
-            while (currentMovementPoints >= 0.5f)
+            yield return new WaitForSeconds(0.1f);
+
+            if (isMilitary)
             {
-                if (CurrentTile == null) break;
-                
-                List<GridTile> validNeighbors = new List<GridTile>();
-                
-                // Scan for valid neighbors using the grid's centralized logic
-                foreach (GridTile neighbor in SquareGridGenerator.Instance.GetNeighbors(CurrentTile))
+                detectedEnemy = FindVisibleEnemy();
+                if (detectedEnemy != null)
                 {
-                    if (neighbor != null && neighbor.IsEmpty)
-                    {
-                        // Use centralized cost calculation
-                        float cost = GetMovementCost(CurrentTile, neighbor);
-                        
-                        // Only consider neighbors we can actually afford to move to
-                        if (currentMovementPoints >= cost)
-                        {
-                            validNeighbors.Add(neighbor);
-                        }
-                    }
-                }
-                
-                if (validNeighbors.Count > 0)
-                {
-                    GridTile target = validNeighbors[Random.Range(0, validNeighbors.Count)];
-                    bool success = MoveTo(target);
-                    
-                    if (!success) break; // Should not happen given the checks, but safety first
-                    
-                    // Small delay between steps so we can see the movement
-                    yield return new WaitForSeconds(0.2f);
-                }
-                else
-                {
-                    // No valid moves left
-                    break;
+                    Debug.Log($"[Unit] {name} spotted enemy {detectedEnemy.name} at {detectedEnemy.CurrentTile.GridPosition}");
+                    continue;
                 }
             }
+
+            if (activeOrders.Count > 0)
+            {
+                continue;
+            }
+
+            if (CurrentTile == null || currentMovementPoints < 0.5f)
+            {
+                continue;
+            }
+
+            if (isMilitary)
+            {
+                detectedEnemy = FindVisibleEnemy();
+                if (detectedEnemy != null)
+                {
+                    Debug.Log($"[Unit] {name} spotted enemy {detectedEnemy.name} at {detectedEnemy.CurrentTile.GridPosition}");
+                    continue;
+                }
+            }
+
+            List<GridTile> validNeighbors = new List<GridTile>();
+
+            foreach (GridTile neighbor in SquareGridGenerator.Instance.GetNeighbors(CurrentTile))
+            {
+                if (neighbor != null && neighbor.IsEmpty)
+                {
+                    if (!IsValidRoamDestination(neighbor))
+                    {
+                        continue;
+                    }
+
+                    float cost = GetMovementCost(CurrentTile, neighbor);
+                    if (currentMovementPoints >= cost)
+                    {
+                        validNeighbors.Add(neighbor);
+                    }
+                }
+            }
+
+            if (validNeighbors.Count > 0)
+            {
+                GridTile target = validNeighbors[Random.Range(0, validNeighbors.Count)];
+                MoveTo(target);
+            }
         }
+    }
+
+    public void CycleRoamOrderMode()
+    {
+        roamOrderMode = roamOrderMode == RoamOrderMode.FreeRoam
+            ? RoamOrderMode.PatrolRoam
+            : RoamOrderMode.FreeRoam;
+
+        Debug.Log($"[Unit] {name} roam order set to {CurrentRoamOrderLabel}");
+    }
+
+    public void SetRoamOrderMode(RoamOrderMode newMode)
+    {
+        roamOrderMode = newMode;
+    }
+
+    private Unit FindVisibleEnemy()
+    {
+        if (!isMilitary || CurrentTile == null || AssetRegistry.Instance == null) return null;
+
+        foreach (Unit unit in AssetRegistry.Instance.Units)
+        {
+            if (unit == null || unit == this || unit.CurrentTile == null) continue;
+            if (!IsEnemyUnit(unit)) continue;
+            if (GetHexDistance(CurrentTile.GridPosition, unit.CurrentTile.GridPosition) <= range)
+            {
+                return unit;
+            }
+        }
+
+        return null;
+    }
+
+    private bool IsEnemyUnit(Unit other)
+    {
+        if (other == null || other == this) return false;
+
+        PlayerOwnership myOwnership = GetComponent<PlayerOwnership>();
+        PlayerOwnership otherOwnership = other.GetComponent<PlayerOwnership>();
+
+        if (myOwnership == null || otherOwnership == null)
+        {
+            return false;
+        }
+
+        return myOwnership.OwnerId != otherOwnership.OwnerId;
+    }
+
+    private bool IsValidRoamDestination(GridTile tile)
+    {
+        if (tile == null) return false;
+        if (!isMilitary) return true;
+        if (roamOrderMode != RoamOrderMode.PatrolRoam) return true;
+
+        return IsWithinPatrolRangeOfFriendlyStructure(tile);
+    }
+
+    private bool IsWithinPatrolRangeOfFriendlyStructure(GridTile tile)
+    {
+        if (tile == null || AssetRegistry.Instance == null) return false;
+
+        foreach (City city in AssetRegistry.Instance.Cities)
+        {
+            if (city == null || city.AssignedTile == null) continue;
+            if (!IsFriendlyStructure(city.gameObject)) continue;
+            if (GetHexDistance(tile.GridPosition, city.AssignedTile.GridPosition) <= 2)
+            {
+                return true;
+            }
+        }
+
+        foreach (Facility facility in AssetRegistry.Instance.Facilities)
+        {
+            if (facility == null || facility.AssignedTile == null) continue;
+            if (!IsFriendlyStructure(facility.gameObject)) continue;
+            if (GetHexDistance(tile.GridPosition, facility.AssignedTile.GridPosition) <= 2)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public virtual bool IsFriendly(Unit other)
+    {
+        if (other == null) return true;
+
+        PlayerOwnership myOwnership = GetComponent<PlayerOwnership>();
+        PlayerOwnership otherOwnership = other.GetComponent<PlayerOwnership>();
+
+        // If either is missing ownership, we don't treat them as hostile by default
+        // to prevent getting stuck on uninitialized units.
+        if (myOwnership == null || otherOwnership == null) return true;
+
+        return myOwnership.OwnerId == otherOwnership.OwnerId;
+    }
+
+    private bool IsFriendlyStructure(GameObject structure)
+    {
+        if (structure == null) return false;
+
+        PlayerOwnership myOwnership = GetComponent<PlayerOwnership>();
+        PlayerOwnership structureOwnership = structure.GetComponent<PlayerOwnership>();
+
+        if (myOwnership == null || structureOwnership == null)
+        {
+            return myOwnership == null && structureOwnership == null;
+        }
+
+        return myOwnership.OwnerId == structureOwnership.OwnerId;
+    }
+
+    private static int GetHexDistance(Vector2Int a, Vector2Int b)
+    {
+        int dq = a.x - b.x;
+        int dr = a.y - b.y;
+        int ds = (-a.x - a.y) - (-b.x - b.y);
+        return (Mathf.Abs(dq) + Mathf.Abs(dr) + Mathf.Abs(ds)) / 2;
     }
 
     public void Initialize(int str, int con, int dex, int cha, int rng, GridTile startTile = null)
@@ -166,20 +317,29 @@ public class Unit : MonoBehaviour, IGridTarget
     public virtual void PlaceOnTile(GridTile tile)
     {
         if (tile == null) return;
-        if (CurrentTile != null) CurrentTile.OccupyingUnit = null;
+        
+        // Safety: Only clear the old tile if it actually belongs to THIS unit.
+        // This prevents high-mobility units (like couriers) from clearing a tile 
+        // that still has a valid citizen on it if they accidentally overlapped.
+        if (CurrentTile != null && CurrentTile.OccupyingUnit == this)
+        {
+            CurrentTile.OccupyingUnit = null;
+        }
         
         CurrentTile = tile;
         tile.OccupyingUnit = this;
 
         transform.SetParent(tile.transform.parent);
         transform.localPosition = tile.transform.localPosition + new Vector3(0, 0, -0.1f);
-        transform.localScale = Vector3.one; 
+        TileObjectScale.ApplyTo(gameObject);
     }
 
     public bool MoveTo(GridTile targetTile)
     {
         if (targetTile == null || CurrentTile == null) return false;
-        if (!targetTile.IsEmpty) return false;
+        
+        // Safety check: Cannot move into a tile already occupied by someone else
+        if (!targetTile.IsEmpty && targetTile.OccupyingUnit != this) return false;
 
         float cost = GetMovementCost(CurrentTile, targetTile);
 
@@ -248,6 +408,22 @@ public class Unit : MonoBehaviour, IGridTarget
         currentMovementPoints = maxMovementPoints;
     }
 
+    protected void RegenerateMovementOverTime(float deltaTime)
+    {
+        if (maxMovementPoints <= 0f || deltaTime <= 0f) return;
+
+        float turnDuration = GetTurnDuration();
+        if (turnDuration <= 0f) return;
+
+        float movementPerSecond = maxMovementPoints / turnDuration;
+        currentMovementPoints = Mathf.Min(maxMovementPoints, currentMovementPoints + movementPerSecond * deltaTime);
+    }
+
+    public float GetTurnDuration()
+    {
+        return 5f / Mathf.Max(1, agility);
+    }
+
     [ContextMenu("Recalculate Stats")]
     public virtual void CalculateDerivedStats()
     {
@@ -255,7 +431,11 @@ public class Unit : MonoBehaviour, IGridTarget
         maxHealth = constitution * 2;
         currentHealth = maxHealth;
         maxMovementPoints = dexterity * 1f;
-        currentMovementPoints = maxMovementPoints;
+        currentMovementPoints = Mathf.Clamp(currentMovementPoints, 0f, maxMovementPoints);
+        if (!Application.isPlaying)
+        {
+            currentMovementPoints = maxMovementPoints;
+        }
         morale = charisma * 2;
     }
 

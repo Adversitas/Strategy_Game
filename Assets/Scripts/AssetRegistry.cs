@@ -11,7 +11,9 @@ public class AssetRegistry : MonoBehaviour
 
     public List<City> Cities { get; private set; } = new List<City>();
     public List<Facility> Facilities { get; private set; } = new List<Facility>();
+    public List<Market> Markets { get; private set; } = new List<Market>();
     public List<Unit> Units { get; private set; } = new List<Unit>();
+    public List<ConstructionProject> ConstructionProjects { get; private set; } = new List<ConstructionProject>();
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
     private static void AutoCreate()
@@ -51,6 +53,16 @@ public class AssetRegistry : MonoBehaviour
     {
         if (Facilities.Contains(facility)) Facilities.Remove(facility);
     }
+    
+    public void RegisterMarket(Market market)
+    {
+        if (!Markets.Contains(market)) Markets.Add(market);
+    }
+    
+    public void UnregisterMarket(Market market)
+    {
+        if (Markets.Contains(market)) Markets.Remove(market);
+    }
 
     public void RegisterUnit(Unit unit)
     {
@@ -60,5 +72,15 @@ public class AssetRegistry : MonoBehaviour
     public void UnregisterUnit(Unit unit)
     {
         if (Units.Contains(unit)) Units.Remove(unit);
+    }
+
+    public void RegisterConstructionProject(ConstructionProject cp)
+    {
+        if (!ConstructionProjects.Contains(cp)) ConstructionProjects.Add(cp);
+    }
+
+    public void UnregisterConstructionProject(ConstructionProject cp)
+    {
+        if (ConstructionProjects.Contains(cp)) ConstructionProjects.Remove(cp);
     }
 }
