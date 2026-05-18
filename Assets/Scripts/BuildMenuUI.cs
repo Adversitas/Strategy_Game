@@ -137,6 +137,7 @@ public class BuildMenuUI : MonoBehaviour
     private void BuildCity()
         {
             if (_currentTile == null || cityPrefab == null || !_currentTile.IsEmpty) return;
+            if (!GameplayCommandService.TryBuildCityFromMenu(_currentTile, cityPrefab)) return;
             
             // Get the visual center of the tile's sprite
             SpriteRenderer tileRenderer = _currentTile.GetComponent<SpriteRenderer>();
@@ -145,6 +146,8 @@ public class BuildMenuUI : MonoBehaviour
             spawnPos.z = -0.1f; // Keep it slightly in front to avoid Z-fighting
             
             GameObject cityGO = Instantiate(cityPrefab, spawnPos, Quaternion.identity);
+            TileObjectScale.ApplyTo(cityGO);
+            PlayerOwnership.EnsureLocalOwner(cityGO);
             City city = cityGO.GetComponent<City>();
             if (city == null) city = cityGO.AddComponent<City>();
             
@@ -200,17 +203,17 @@ public class BuildMenuUI : MonoBehaviour
         GameObject go = new GameObject(name);
         go.transform.SetParent(parent.transform, false);
         
-        // Crisp Text Hack: Multiply size by 5, scale by 0.2
         Text t = go.AddComponent<Text>();
         t.text = text;
         t.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        t.fontSize = size * 5; 
+        t.fontSize = size;
         t.color = color;
         t.alignment = TextAnchor.MiddleCenter;
-        t.horizontalOverflow = HorizontalWrapMode.Overflow;
-        t.verticalOverflow = VerticalWrapMode.Overflow;
-
-        go.transform.localScale = Vector3.one * 0.2f;
+        t.horizontalOverflow = HorizontalWrapMode.Wrap;
+        t.verticalOverflow = VerticalWrapMode.Truncate;
+        t.resizeTextForBestFit = true;
+        t.resizeTextMinSize = Mathf.Max(10, size - 6);
+        t.resizeTextMaxSize = size;
         
         return t;
     }
@@ -243,13 +246,14 @@ public class BuildMenuUI : MonoBehaviour
         Text t = textGO.AddComponent<Text>();
         t.text = label;
         t.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        t.fontSize = 18 * 5; // Crisp Text Hack
+        t.fontSize = 18;
         t.color = TextWhite;
         t.alignment = TextAnchor.MiddleCenter;
-        t.horizontalOverflow = HorizontalWrapMode.Overflow;
-        t.verticalOverflow = VerticalWrapMode.Overflow;
-
-        textGO.transform.localScale = Vector3.one * 0.2f;
+        t.horizontalOverflow = HorizontalWrapMode.Wrap;
+        t.verticalOverflow = VerticalWrapMode.Truncate;
+        t.resizeTextForBestFit = true;
+        t.resizeTextMinSize = 12;
+        t.resizeTextMaxSize = 18;
         
         return btnGO;
     }

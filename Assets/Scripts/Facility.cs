@@ -10,6 +10,7 @@ public class Facility : MonoBehaviour, IGridTarget
     [SerializeField] private float productionStockpile = 0;
     [SerializeField] private int maxProductionStockpile = 100;
     [SerializeField] private int productionPerTurn = 10;
+    [SerializeField] private float productionSpendThresholdPerTurn = 10f;
     [SerializeField] private float turnDuration = 5f;
 
     private float _timer;
@@ -26,6 +27,7 @@ public class Facility : MonoBehaviour, IGridTarget
 
     public float ProductionStockpile => productionStockpile;
     public int MaxProductionStockpile => maxProductionStockpile;
+    public float ProductionSpendThresholdPerTurn => productionSpendThresholdPerTurn;
 
     private void Start()
     {

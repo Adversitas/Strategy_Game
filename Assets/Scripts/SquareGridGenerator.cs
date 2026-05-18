@@ -31,6 +31,11 @@ public class SquareGridGenerator : MonoBehaviour
 
     [Header("Prefabs")]
     [SerializeField] private GameObject selectionHaloPrefab;
+    [SerializeField] private GameObject startingCityPrefab;
+
+    [Header("Starting Setup")]
+    [SerializeField] private bool spawnStartingCity = true;
+    [SerializeField] private Vector2Int startingCityPosition = new Vector2Int(4, 5);
 
     // O(1) lookup by grid coordinate
     private readonly Dictionary<Vector2Int, GridTile> _tileLookup = new Dictionary<Vector2Int, GridTile>();
@@ -51,8 +56,14 @@ public class SquareGridGenerator : MonoBehaviour
         if (ctrl != null) _mainCamera = ctrl.GetComponent<Camera>();
         if (_mainCamera == null) _mainCamera = Camera.main;
 
+        if (startingCityPrefab == null)
+        {
+            startingCityPrefab = Resources.Load<GameObject>("City");
+        }
+
         ClearGrid();
         GenerateGrid();
+        SpawnStartingCity();
     }
 
     private void Update()
@@ -174,7 +185,7 @@ public class SquareGridGenerator : MonoBehaviour
             GameObject resObj = new GameObject($"Resource_{spriteName}");
             resObj.transform.SetParent(tile.transform);
             resObj.transform.localPosition = new Vector3(0, 0, -0.1f);
-            resObj.transform.localScale = Vector3.one * 0.5f;
+            TileObjectScale.ApplyTo(resObj);
 
             SpriteRenderer sr = resObj.AddComponent<SpriteRenderer>();
             sr.sprite = resourceSprite;
@@ -324,6 +335,34 @@ public class SquareGridGenerator : MonoBehaviour
         }
     }
 
+    private void SpawnStartingCity()
+    {
+        if (!spawnStartingCity || startingCityPrefab == null) return;
+
+        GridTile tile = GetTileAt(startingCityPosition);
+        if (tile == null || tile.OccupyingBuilding != null) return;
+
+        SpriteRenderer tileRenderer = tile.GetComponent<SpriteRenderer>();
+        Vector3 spawnPos = tileRenderer != null ? tileRenderer.bounds.center : tile.transform.position;
+        spawnPos.z = -0.1f;
+
+        GameObject cityGO = Instantiate(startingCityPrefab, spawnPos, Quaternion.identity);
+        TileObjectScale.ApplyTo(cityGO);
+        PlayerOwnership.EnsureLocalOwner(cityGO);
+
+        City city = cityGO.GetComponent<City>();
+        if (city == null)
+        {
+            city = cityGO.AddComponent<City>();
+        }
+
+        city.AssignedTile = tile;
+        city.AddProduction(200f);
+        tile.OccupyingBuilding = cityGO;
+
+        Debug.Log($"[SquareGridGenerator] Spawned starting city at {startingCityPosition}");
+    }
+
     private void EnsureBoard()
     {
         if (_board != null) return;
@@ -341,8 +380,10 @@ public class SquareGridGenerator : MonoBehaviour
 
     private static Sprite CreateHexSprite()
     {
-        int size = 256; // Higher res for smoother edges
+        int size = 512;
         Texture2D tex = new Texture2D(size, size);
+        tex.filterMode = FilterMode.Bilinear;
+        tex.wrapMode = TextureWrapMode.Clamp;
         Color[] pixels = new Color[size * size];
 
         // Fill transparent
@@ -366,19 +407,27 @@ public class SquareGridGenerator : MonoBehaviour
         {
             for (int x = 0; x < size; x++)
             {
-                if (IsPointInPolygon(new Vector2(x, y), corners))
+                Vector2 pixelPosition = new Vector2(x, y);
+                bool isInside = IsPointInPolygon(pixelPosition, corners);
+                float edgeDistance = float.MaxValue;
+                for (int i = 0; i < 6; i++)
                 {
-                    // Draw border if close to any edge
-                    bool isBorder = false;
-                    for (int i = 0; i < 6; i++)
-                    {
-                        Vector2 p1 = corners[i];
-                        Vector2 p2 = corners[(i + 1) % 6];
-                        float dist = DistanceToSegment(new Vector2(x, y), p1, p2);
-                        if (dist < 3.0f) { isBorder = true; break; }
-                    }
+                    Vector2 p1 = corners[i];
+                    Vector2 p2 = corners[(i + 1) % 6];
+                    edgeDistance = Mathf.Min(edgeDistance, DistanceToSegment(pixelPosition, p1, p2));
+                }
 
-                    pixels[y * size + x] = isBorder ? new Color(0.9f, 0.9f, 0.9f, 1.0f) : Color.white;
+                if (isInside)
+                {
+                    float alpha = Mathf.Clamp01(edgeDistance);
+                    float border = Mathf.Clamp01((4.0f - edgeDistance) / 3.0f);
+                    Color fill = Color.Lerp(Color.white, new Color(0.9f, 0.9f, 0.9f, 1.0f), border);
+                    fill.a = alpha;
+                    pixels[y * size + x] = fill;
+                }
+                else if (edgeDistance < 1.0f)
+                {
+                    pixels[y * size + x] = new Color(1f, 1f, 1f, 1.0f - edgeDistance);
                 }
             }
         }

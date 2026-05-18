@@ -49,6 +49,7 @@ public class PlacementManager : MonoBehaviour
         {
             // Create ghost from prefab
             _ghostObject = Instantiate(prefab);
+            TileObjectScale.ApplyTo(_ghostObject);
             
             // Disable components that shouldn't run on a ghost
             if (_ghostObject.TryGetComponent(out Collider c)) c.enabled = false;
@@ -74,7 +75,7 @@ public class PlacementManager : MonoBehaviour
             
             sr.color = new Color(0.5f, 0.5f, 0.5f, 0.5f);
             sr.sortingOrder = 100;
-            _ghostObject.transform.localScale = Vector3.one * 0.8f;
+            TileObjectScale.ApplyTo(_ghostObject);
         }
         
         SetGhostColor(validColor);
@@ -156,18 +157,48 @@ public class PlacementManager : MonoBehaviour
         
         bool noBuilding = tile.OccupyingBuilding == null;
         
-        // If placing a facility (prefab exists)
+        // If placing a building (prefab exists)
         if (_originalPrefab != null)
         {
+            bool isCity = _originalPrefab.GetComponent<City>() != null || _originalPrefab.name.Contains("City") || _originalPrefab.name.Contains("ConstructionProject");
             bool hasResource = tile.TileResource != ResourceType.None;
-            // Also ensure no other road is pending here
-            return noBuilding && hasResource && !tile.IsPendingRoad;
+            
+            if (isCity)
+            {
+                // Cities can be placed anywhere (except where there is a building or pending road)
+                return noBuilding && !tile.IsPendingRoad;
+            }
+            else
+            {
+                // Facilities require a resource
+                return noBuilding && hasResource && !tile.IsPendingRoad;
+            }
         }
         else
         {
             // If placing a road (no prefab)
-            return noBuilding && !tile.HasRoad && !tile.IsPendingRoad;
+            return noBuilding && !tile.HasRoad && !tile.IsPendingRoad && HasAdjacentRoadOrDistrict(tile);
         }
+    }
+
+    private bool HasAdjacentRoadOrDistrict(GridTile tile)
+    {
+        if (tile == null || SquareGridGenerator.Instance == null) return false;
+
+        foreach (GridTile neighbor in SquareGridGenerator.Instance.GetNeighbors(tile))
+        {
+            if (neighbor == null) continue;
+
+            bool hasRoadConnection = neighbor.HasRoad || neighbor.IsPendingRoad;
+            bool hasDistrictConnection = neighbor.OccupyingBuilding != null;
+
+            if (hasRoadConnection || hasDistrictConnection)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private void SetGhostColor(Color color)

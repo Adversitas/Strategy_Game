@@ -10,6 +10,7 @@ GameObject:
   m_Component:
   - component: {fileID: 5825478090343755547}
   - component: {fileID: 5282315202787650248}
+  - component: {fileID: 6809373982786833321}
   m_Layer: 0
   m_Name: City
   m_TagString: Untagged
@@ -81,7 +82,7 @@ SpriteRenderer:
   m_SortingLayer: 0
   m_SortingOrder: 0
   m_MaskInteraction: 0
-  m_Sprite: {fileID: 10913, guid: 0000000000000000f000000000000000, type: 0}
+  m_Sprite: {fileID: -6929924221510541977, guid: 19e07f9d107e445408633f50457d456e, type: 3}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_FlipX: 0
   m_FlipY: 0
@@ -91,3 +92,27 @@ SpriteRenderer:
   m_SpriteTileMode: 0
   m_WasSpriteAssigned: 1
   m_SpriteSortPoint: 0
+--- !u!114 &6809373982786833321
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4149400352378568976}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c3282a27826bdd149a6b3a4409f3a5b5, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::City
+  productionStockpile: 0
+  maxProductionStockpile: 500
+  productionPerTurn: 5
+  foodStockpile: 0
+  maxFoodStockpile: 500
+  foodPerTurn: 5
+  citizenCapacity: 1
+  currentCitizens: 0
+  foodToNextCitizen: 50
+  turnDuration: 5
+  assignedTile: {fileID: 0}
+  isCapital: 0
