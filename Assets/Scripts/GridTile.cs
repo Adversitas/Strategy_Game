@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 public enum TerrainType
@@ -36,15 +37,19 @@ public class GridTile : MonoBehaviour
         {
             _occupyingBuilding = value;
             RefreshRoadVisual();
-            RefreshAdjacentRoadVisuals();
         }
     }
     public Unit OccupyingUnit { get; set; }
+    // Couriers are special: they do not always occupy the tile in the same way
+    // as other units. We keep a separate reference so friendly couriers can be
+    // non-blocking while still being queryable/selectable.
+    public Courier OccupyingCourier { get; set; }
     public bool HasRoad { get; private set; }
     public bool IsPendingRoad { get; set; }
 
     
     public bool HasUnit => OccupyingUnit != null;
+    public bool HasCourier => OccupyingCourier != null;
     public bool HasBuilding => OccupyingBuilding != null;
     public bool IsEmpty => !HasUnit && !HasBuilding;
     
@@ -107,7 +112,6 @@ public class GridTile : MonoBehaviour
         HasRoad = true;
         IsPendingRoad = false;
         RefreshRoadVisual();
-        RefreshAdjacentRoadVisuals();
     }
 
     public Vector3 GetVisualCenter()
@@ -120,6 +124,14 @@ public class GridTile : MonoBehaviour
 
     private void RefreshRoadVisual()
     {
+        RefreshRoadVisual(new HashSet<GridTile>());
+    }
+
+    private void RefreshRoadVisual(HashSet<GridTile> visited)
+    {
+        if (visited == null) return;
+        if (!visited.Add(this)) return;
+
         bool shouldRenderRoad = HasRoad || (HasBuilding && HasAdjacentRoad());
 
         if (!shouldRenderRoad)
@@ -145,9 +157,11 @@ public class GridTile : MonoBehaviour
         {
             _road.Configure(this);
         }
+
+        RefreshAdjacentRoadVisuals(visited);
     }
 
-    private void RefreshAdjacentRoadVisuals()
+    private void RefreshAdjacentRoadVisuals(HashSet<GridTile> visited)
     {
         if (SquareGridGenerator.Instance == null) return;
 
@@ -155,7 +169,7 @@ public class GridTile : MonoBehaviour
         {
             if (neighbor != null)
             {
-                neighbor.RefreshRoadVisual();
+                neighbor.RefreshRoadVisual(visited);
             }
         }
     }

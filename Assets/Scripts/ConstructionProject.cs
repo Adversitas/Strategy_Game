@@ -5,6 +5,14 @@ using UnityEngine;
 /// </summary>
 public class ConstructionProject : MonoBehaviour, IGridTarget
 {
+    [Header("Courier Assignment")]
+    [SerializeField] private bool hasCourierAssigned = false;
+    public bool HasCourierAssigned
+    {
+        get => hasCourierAssigned;
+        set => hasCourierAssigned = value;
+    }
+
     [Header("Progress")]
     [SerializeField] private float deliveredProduction = 0f;
     [SerializeField] private float builtProduction = 0f;

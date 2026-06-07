@@ -294,7 +294,7 @@ public class Unit : MonoBehaviour, IGridTarget
         return myOwnership.OwnerId == structureOwnership.OwnerId;
     }
 
-    private static int GetHexDistance(Vector2Int a, Vector2Int b)
+    protected static int GetHexDistance(Vector2Int a, Vector2Int b)
     {
         int dq = a.x - b.x;
         int dr = a.y - b.y;
@@ -334,18 +334,90 @@ public class Unit : MonoBehaviour, IGridTarget
         TileObjectScale.ApplyTo(gameObject);
     }
 
+    /// <summary>
+    /// Swap positions with another unit on adjacent tiles. This performs a safe swap of
+    /// `CurrentTile`/`OccupyingUnit` references and updates transforms without using
+    /// the usual `PlaceOnTile` (which assumes single-owner semantics).
+    /// </summary>
+    public void SwapWith(Unit other)
+    {
+        if (other == null || CurrentTile == null || other.CurrentTile == null) return;
+
+        GridTile myTile = CurrentTile;
+        GridTile otherTile = other.CurrentTile;
+
+        // Perform a robust swap of occupancy references even if the target tile's
+        // OccupyingUnit flag wasn't claimed by the courier (couriers may not claim).
+
+        // Clear existing occupant markers if they refer to these units
+        if (myTile.OccupyingUnit == this) myTile.OccupyingUnit = null;
+        if (otherTile.OccupyingUnit == other) otherTile.OccupyingUnit = null;
+
+        // Assign swapped occupancy
+        myTile.OccupyingUnit = other;
+        other.CurrentTile = myTile;
+        other.transform.SetParent(myTile.transform.parent);
+        other.transform.localPosition = myTile.transform.localPosition + new Vector3(0, 0, -0.1f);
+        TileObjectScale.ApplyTo(other.gameObject);
+
+        otherTile.OccupyingUnit = this;
+        CurrentTile = otherTile;
+        transform.SetParent(otherTile.transform.parent);
+        transform.localPosition = otherTile.transform.localPosition + new Vector3(0, 0, -0.1f);
+        TileObjectScale.ApplyTo(gameObject);
+    }
+
     public bool MoveTo(GridTile targetTile)
     {
         if (targetTile == null || CurrentTile == null) return false;
         
-        // Safety check: Cannot move into a tile already occupied by someone else
-        if (!targetTile.IsEmpty && targetTile.OccupyingUnit != this) return false;
-
-        float cost = GetMovementCost(CurrentTile, targetTile);
-
-        if (currentMovementPoints >= cost)
+        // If there's a courier on the target tile and it's friendly, allow
+        // co-occupancy: the moving unit can step onto the same tile without
+        // displacing the courier. This makes couriers non-blocking for friends.
+        if (targetTile.OccupyingCourier != null && targetTile.OccupyingCourier != this)
         {
-            currentMovementPoints -= cost;
+            Unit courier = targetTile.OccupyingCourier;
+            if (IsFriendly(courier))
+            {
+                float courierMoveCost = GetMovementCost(CurrentTile, targetTile);
+                if (currentMovementPoints >= courierMoveCost)
+                {
+                    currentMovementPoints -= courierMoveCost;
+                    PlaceOnTile(targetTile);
+                    return true;
+                }
+                return false;
+            }
+
+            // Enemy courier blocks movement
+            return false;
+        }
+
+        // Safety check: Cannot move into a tile occupied by another non-courier unit.
+        if (targetTile.OccupyingUnit != null && targetTile.OccupyingUnit != this)
+        {
+            // Allow stepping onto a tile that contains a friendly Courier by swapping places.
+            Unit other = targetTile.OccupyingUnit;
+            if (other is Courier && IsFriendly(other))
+            {
+                float costSwap = GetMovementCost(CurrentTile, targetTile);
+                if (currentMovementPoints >= costSwap)
+                {
+                    currentMovementPoints -= costSwap;
+                    SwapWith(other);
+                    return true;
+                }
+                return false;
+            }
+
+            return false;
+        }
+
+        float movementCost = GetMovementCost(CurrentTile, targetTile);
+
+        if (currentMovementPoints >= movementCost)
+        {
+            currentMovementPoints -= movementCost;
             PlaceOnTile(targetTile);
             return true;
         }

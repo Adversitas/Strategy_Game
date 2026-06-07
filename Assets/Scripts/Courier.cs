@@ -16,14 +16,20 @@ public class Courier : Unit
     public bool RepeatEnabled => repeatEnabled;
     
     private IGridTarget targetDestination;
+    private Facility repeatSourceFacility;
     public IGridTarget TargetDestination
     {
         get => targetDestination;
         set
         {
             targetDestination = value;
+            if (value is Facility facility)
+            {
+                repeatSourceFacility = facility;
+            }
             EnsureOriginCity();
             _isReturning = GetTargetConstructionProject() != null && heldProduction <= 0f;
+            TryPromoteCityTargetToMarket();
             Debug.Log($"[Courier] {name} assigned destination: {(targetDestination != null ? targetDestination.GetType().Name : "NULL")}, origin={(OriginCity != null ? OriginCity.name : "NULL")}, held={heldProduction:F1}, returning={_isReturning}");
         }
     }
@@ -34,6 +40,10 @@ public class Courier : Unit
     public void SetRepeatEnabled(bool enabled)
     {
         repeatEnabled = enabled;
+        if (!repeatEnabled)
+        {
+            repeatSourceFacility = null;
+        }
         Debug.Log($"[Courier] {name} repeat mode set to {repeatEnabled}");
     }
 
@@ -64,6 +74,8 @@ public class Courier : Unit
         // Autonomous movement logic
         if (currentMovementPoints >= 0.5f)
         {
+            TryRouteLoadedCargoThroughMarket();
+            TryPromoteCityTargetToMarket();
             IGridTarget currentGoal = _isReturning ? (IGridTarget)OriginCity : TargetDestination;
             
             if (currentGoal != null && currentGoal.AssignedTile != null && currentGoal.AssignedTile != CurrentTile)
@@ -78,7 +90,8 @@ public class Courier : Unit
                     }
 
                     // Check if the next step is physically blocked by an enemy
-                    bool isEnemyBlocked = nextStep.OccupyingUnit != null && !IsFriendly(nextStep.OccupyingUnit);
+                    Unit potentialBlocker = nextStep.OccupyingUnit != null ? nextStep.OccupyingUnit : (Unit)nextStep.OccupyingCourier;
+                    bool isEnemyBlocked = potentialBlocker != null && !IsFriendly(potentialBlocker);
 
                     if (!isEnemyBlocked)
                     {
@@ -91,7 +104,7 @@ public class Courier : Unit
                         // Path is blocked by an enemy: Stop and wait in front of them
                         if (Time.frameCount % 240 == 0)
                         {
-                            Unit blocker = nextStep.OccupyingUnit;
+                            Unit blocker = potentialBlocker;
                             int myId = GetComponent<PlayerOwnership>()?.OwnerId ?? -1;
                             int otherId = blocker.GetComponent<PlayerOwnership>()?.OwnerId ?? -1;
                             Debug.LogWarning($"[Courier] {name}(ID:{myId}) is waiting for unit {blocker.name}(ID:{otherId}) at {nextStep.GridPosition}. IsFriendly={IsFriendly(blocker)}");
@@ -138,18 +151,7 @@ public class Courier : Unit
 
             foreach (var neighbor in SquareGridGenerator.Instance.GetNeighbors(current))
             {
-                bool isTarget = (neighbor == target);
-                bool hasRoad = neighbor.HasRoad;
-                
-                // COURIER PATHFINDING: 
-                // Ignore all units here so we always pick the shortest physical road path.
-                // We also block buildings that aren't the target.
-                bool hasBuilding = neighbor.HasBuilding;
-                bool isBlockedByStructure = hasBuilding && !isTarget;
-                
-                bool isPathable = (hasRoad || isTarget) && !isBlockedByStructure;
-
-                if (!cameFrom.ContainsKey(neighbor) && isPathable)
+                if (!cameFrom.ContainsKey(neighbor) && TraversalRules.CanTraverseTile(gameObject, neighbor, target))
                 {
                     cameFrom[neighbor] = current;
                     queue.Enqueue(neighbor);
@@ -166,19 +168,24 @@ public class Courier : Unit
         if (tile == null) return;
 
         // Safety: Only clear the old tile if it actually belongs to THIS unit.
-        if (CurrentTile != null && CurrentTile.OccupyingUnit == this)
+        if (CurrentTile != null)
         {
-            CurrentTile.OccupyingUnit = null;
+            if (CurrentTile.OccupyingUnit == this)
+            {
+                CurrentTile.OccupyingUnit = null;
+            }
+            if (CurrentTile.OccupyingCourier == this)
+            {
+                CurrentTile.OccupyingCourier = null;
+            }
         }
 
         CurrentTile = tile;
         
-        // COURIER EXCEPTION: Only claim the tile if it's actually empty.
-        // This allows them to pass through Citizens without "stealing" the selection reference.
-        if (tile.OccupyingUnit == null)
-        {
-            tile.OccupyingUnit = this;
-        }
+        // COURIER EXCEPTION: Couriers are non-blocking for friendly units and
+        // therefore we mark them on the tile using `OccupyingCourier` so other
+        // units can still walk onto the same tile.
+        tile.OccupyingCourier = this;
 
         transform.SetParent(tile.transform.parent);
         transform.localPosition = tile.transform.localPosition + new Vector3(0, 0, -0.1f);
@@ -215,7 +222,11 @@ public class Courier : Unit
             Debug.Log($"[Courier] {name} reached city destination at {tile.GridPosition}");
             UnloadAtCity(destinationCity);
             _isReturning = false;
-            if (ReferenceEquals(targetDestination, destinationCity))
+            if (repeatEnabled && repeatSourceFacility != null)
+            {
+                TargetDestination = repeatSourceFacility;
+            }
+            else if (ReferenceEquals(targetDestination, destinationCity))
             {
                 targetDestination = null;
             }
@@ -232,28 +243,52 @@ public class Courier : Unit
             {
                 float previousHeldProduction = heldProduction;
                 ExtractFromFacility(facility);
-                _isReturning = heldProduction > previousHeldProduction;
+                if (heldProduction > previousHeldProduction)
+                {
+                    repeatSourceFacility = facility;
+                    TargetDestination = OriginCity;
+                    _isReturning = false;
+                    TryPromoteCityTargetToMarket();
+                }
+                return;
             }
         }
         // 2. Check for Origin Return (City)
-        else if (_isReturning && OriginCity != null && OriginCity.AssignedTile == tile)
+        if (_isReturning && OriginCity != null && OriginCity.AssignedTile == tile)
         {
             Debug.Log($"[Courier] {name} returned to origin city at {tile.GridPosition}");
             UnloadAtCity(OriginCity);
             _isReturning = false; // Ready for next assignment
+            return;
         }
         // 3. Check for Market (Gather Point)
-        else if (tile.OccupyingBuilding != null)
+        if (tile.OccupyingBuilding != null)
         {
             Market market = tile.OccupyingBuilding.GetComponent<Market>();
-            if (market != null && heldProduction > 0f)
+            if (market != null)
             {
-                City targetCity = market.OriginCity != null ? market.OriginCity : OriginCity;
-                if (targetCity != null)
+                if (heldProduction > 0f)
                 {
-                    UnloadAtCity(targetCity);
-                    if (_isReturning) _isReturning = false;
-                    Debug.Log($"[Courier] {name} dropped off resources at Market at {tile.GridPosition}.");
+                    City targetCity = market.OriginCity != null ? market.OriginCity : OriginCity;
+                    if (targetCity != null)
+                    {
+                        UnloadAtCity(targetCity);
+                        if (_isReturning) _isReturning = false;
+                        Debug.Log($"[Courier] {name} dropped off resources at Market at {tile.GridPosition}.");
+
+                        if (repeatEnabled && repeatSourceFacility != null)
+                        {
+                            TargetDestination = repeatSourceFacility;
+                        }
+                    }
+                }
+
+                if (ReferenceEquals(targetDestination, market))
+                {
+                    if (!(repeatEnabled && repeatSourceFacility != null))
+                    {
+                        targetDestination = null;
+                    }
                 }
             }
 
@@ -281,14 +316,21 @@ public class Courier : Unit
             return;
         }
 
-        if (!_isReturning && project.AssignedTile == tile)
+if (!_isReturning && project.AssignedTile == tile)
         {
             GridTile projectTile = project.AssignedTile;
+            
+            // Mark that a courier is assigned to this project
+            project.HasCourierAssigned = true;
+            
             DepositIntoConstructionProject(project);
             bool projectStillNeedsProduction = project != null && project.RemainingProduction > 0f;
             bool projectCompleted = project == null || project.IsCompleted;
             if (projectCompleted)
             {
+                // Clear flag when project is done
+                project.HasCourierAssigned = false;
+                
                 Facility completedFacility = projectTile != null ? projectTile.OccupyingBuilding?.GetComponent<Facility>() : null;
                 if (repeatEnabled && completedFacility != null)
                 {
@@ -304,6 +346,9 @@ public class Courier : Unit
             {
                 // Construction has enough stored production and now waits on a citizen.
                 // Clear the work tile so the citizen can step onto it.
+                // Also clear the courier flag so citizens can work on it
+                project.HasCourierAssigned = false;
+                
                 _isReturning = OriginCity != null;
                 TargetDestination = OriginCity;
             }
@@ -312,6 +357,16 @@ public class Courier : Unit
                 _isReturning = true;
             }
             return;
+        }
+
+        if (_isReturning && OriginCity != null && OriginCity.AssignedTile == tile)
+        {
+            // Keep flag set while still assigned to this project
+        }
+        else if (project.HasCourierAssigned && !ReferenceEquals(TargetDestination, project) && TargetDestination != null)
+        {
+            // We've switched to something else, clear the flag
+            project.HasCourierAssigned = false;
         }
 
         if (_isReturning && OriginCity.AssignedTile == tile)
@@ -326,6 +381,107 @@ public class Courier : Unit
             LoadFromCityForConstruction(OriginCity, project);
             _isReturning = heldProduction <= 0f;
         }
+    }
+
+    private void TryPromoteCityTargetToMarket()
+    {
+        if (CurrentTile == null || AssetRegistry.Instance == null) return;
+        if (targetDestination is not City targetCity || targetCity.AssignedTile == null) return;
+
+        GridTile cityTile = targetCity.AssignedTile;
+        if (!TryGetRoadDistance(gameObject, CurrentTile, cityTile, out int cityDistance)) return;
+
+        Market bestMarket = null;
+        int bestMarketDistance = int.MaxValue;
+
+        foreach (Market market in AssetRegistry.Instance.Markets)
+        {
+            if (market == null || market.AssignedTile == null) continue;
+            City marketOrigin = market.GetOriginCity();
+            if (marketOrigin != targetCity) continue;
+
+            if (!TryGetRoadDistance(gameObject, CurrentTile, market.AssignedTile, out int marketDistance)) continue;
+            if (marketDistance < bestMarketDistance)
+            {
+                bestMarketDistance = marketDistance;
+                bestMarket = market;
+            }
+        }
+
+        if (bestMarket == null || bestMarketDistance >= cityDistance) return;
+
+        targetDestination = bestMarket;
+        Debug.Log($"[Courier] {name} redirected delivery from {targetCity.name} to market at {bestMarket.AssignedTile.GridPosition}.");
+    }
+
+    private bool TryRouteLoadedCargoThroughMarket()
+    {
+        if (CurrentTile == null || AssetRegistry.Instance == null) return false;
+        if (heldProduction <= 0f || OriginCity == null || OriginCity.AssignedTile == null) return false;
+        if (GetTargetConstructionProject() != null) return false;
+
+        GridTile cityTile = OriginCity.AssignedTile;
+        if (!TryGetRoadDistance(gameObject, CurrentTile, cityTile, out int cityDistance)) return false;
+
+        Market bestMarket = null;
+        int bestMarketDistance = int.MaxValue;
+
+        foreach (Market market in AssetRegistry.Instance.Markets)
+        {
+            if (market == null || market.AssignedTile == null) continue;
+            City marketOrigin = market.GetOriginCity();
+            if (marketOrigin != OriginCity) continue;
+
+            if (!TryGetRoadDistance(gameObject, CurrentTile, market.AssignedTile, out int marketDistance)) continue;
+            if (marketDistance < bestMarketDistance)
+            {
+                bestMarketDistance = marketDistance;
+                bestMarket = market;
+            }
+        }
+
+        if (bestMarket == null || bestMarketDistance >= cityDistance) return false;
+
+        targetDestination = bestMarket;
+        _isReturning = false;
+        Debug.Log($"[Courier] {name} routed loaded cargo through market at {bestMarket.AssignedTile.GridPosition} instead of returning directly to {OriginCity.name}.");
+        return true;
+    }
+
+    private static bool TryGetRoadDistance(GameObject source, GridTile start, GridTile target, out int distance)
+    {
+        distance = int.MaxValue;
+        if (source == null || start == null || target == null || SquareGridGenerator.Instance == null) return false;
+
+        Queue<GridTile> queue = new Queue<GridTile>();
+        Dictionary<GridTile, int> steps = new Dictionary<GridTile, int>();
+
+        queue.Enqueue(start);
+        steps[start] = 0;
+
+        while (queue.Count > 0)
+        {
+            GridTile current = queue.Dequeue();
+            int currentDistance = steps[current];
+
+            if (current == target)
+            {
+                distance = currentDistance;
+                return true;
+            }
+
+            foreach (GridTile neighbor in SquareGridGenerator.Instance.GetNeighbors(current))
+            {
+                if (neighbor == null || steps.ContainsKey(neighbor)) continue;
+
+                if (!TraversalRules.CanTraverseTile(source, neighbor, target)) continue;
+
+                steps[neighbor] = currentDistance + 1;
+                queue.Enqueue(neighbor);
+            }
+        }
+
+        return false;
     }
 
     private ConstructionProject GetTargetConstructionProject()

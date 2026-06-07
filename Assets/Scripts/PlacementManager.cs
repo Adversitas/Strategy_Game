@@ -161,12 +161,18 @@ public class PlacementManager : MonoBehaviour
         if (_originalPrefab != null)
         {
             bool isCity = _originalPrefab.GetComponent<City>() != null || _originalPrefab.name.Contains("City") || _originalPrefab.name.Contains("ConstructionProject");
+            bool isMarket = _originalPrefab.GetComponent<Market>() != null || _originalPrefab.name.Contains("Market");
             bool hasResource = tile.TileResource != ResourceType.None;
             
             if (isCity)
             {
                 // Cities can be placed anywhere (except where there is a building or pending road)
                 return noBuilding && !tile.IsPendingRoad;
+            }
+            else if (isMarket)
+            {
+                // Markets must be placed on an existing road tile that links a city and a district/facility.
+                return noBuilding && tile.HasRoad && !tile.IsPendingRoad && HasRoadConnectionBetweenCityAndDistrict(tile);
             }
             else
             {
@@ -179,6 +185,51 @@ public class PlacementManager : MonoBehaviour
             // If placing a road (no prefab)
             return noBuilding && !tile.HasRoad && !tile.IsPendingRoad && HasAdjacentRoadOrDistrict(tile);
         }
+    }
+
+    private bool HasRoadConnectionBetweenCityAndDistrict(GridTile tile)
+    {
+        if (tile == null || SquareGridGenerator.Instance == null) return false;
+        if (!tile.HasRoad) return false;
+
+        Queue<GridTile> queue = new Queue<GridTile>();
+        HashSet<GridTile> visited = new HashSet<GridTile>();
+        bool foundCity = false;
+        bool foundDistrict = false;
+
+        queue.Enqueue(tile);
+        visited.Add(tile);
+
+        while (queue.Count > 0 && !(foundCity && foundDistrict))
+        {
+            GridTile current = queue.Dequeue();
+            if (current == null) continue;
+
+            if (current.OccupyingBuilding != null)
+            {
+                if (current.OccupyingBuilding.GetComponent<City>() != null)
+                {
+                    foundCity = true;
+                }
+                else
+                {
+                    foundDistrict = true;
+                }
+            }
+
+            foreach (GridTile neighbor in SquareGridGenerator.Instance.GetNeighbors(current))
+            {
+                if (neighbor == null || visited.Contains(neighbor)) continue;
+
+                bool canTraverse = neighbor.HasRoad || neighbor.OccupyingBuilding != null;
+                if (!canTraverse) continue;
+
+                visited.Add(neighbor);
+                queue.Enqueue(neighbor);
+            }
+        }
+
+        return foundCity && foundDistrict;
     }
 
     private bool HasAdjacentRoadOrDistrict(GridTile tile)

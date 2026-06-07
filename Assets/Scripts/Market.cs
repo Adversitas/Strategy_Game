@@ -9,6 +9,16 @@ public class Market : MonoBehaviour, IGridTarget
     public GridTile AssignedTile { get; private set; }
     public City OriginCity { get; private set; }
 
+    public City GetOriginCity()
+    {
+        if (OriginCity == null)
+        {
+            FindOriginCity();
+        }
+
+        return OriginCity;
+    }
+
     public void Initialize(GridTile tile)
     {
         AssignedTile = tile;
@@ -53,8 +63,8 @@ public class Market : MonoBehaviour, IGridTarget
 
             foreach (GridTile neighbor in SquareGridGenerator.Instance.GetNeighbors(current))
             {
-                // Only follow roads (or the current tile which is the market itself)
-                if (!visited.Contains(neighbor) && (neighbor.HasRoad || neighbor == AssignedTile))
+                // Friendly buildings can behave like road connectors for market linking.
+                if (!visited.Contains(neighbor) && TraversalRules.CanTraverseTile(gameObject, neighbor, AssignedTile))
                 {
                     visited.Add(neighbor);
                     queue.Enqueue(neighbor);

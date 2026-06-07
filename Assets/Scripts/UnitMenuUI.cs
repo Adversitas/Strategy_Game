@@ -89,9 +89,17 @@ public class UnitMenuUI : MonoBehaviour
         if (tile != null && tile.OccupyingUnit != null)
         {
             _selectedUnit = tile.OccupyingUnit;
+        }
+        else if (tile != null && tile.OccupyingCourier != null)
+        {
+            _selectedUnit = tile.OccupyingCourier;
+        }
+
+        if (_selectedUnit != null)
+        {
             _unitNameLabel.text = _selectedUnit.name.ToUpper();
             UpdateStatsUI();
-            
+
             bool isCourier = _selectedUnit is Courier;
             bool isMilitary = _selectedUnit.IsMilitary;
             Debug.Log($"[UnitMenuUI] Selected unit: {_selectedUnit.name}, type={_selectedUnit.GetType().Name}, isCourier={isCourier}, tile={tile.GridPosition}");

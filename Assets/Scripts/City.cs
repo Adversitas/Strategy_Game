@@ -276,6 +276,8 @@ public class City : MonoBehaviour, IGridTarget
         foreach (ConstructionProject project in AssetRegistry.Instance.ConstructionProjects)
         {
             if (project == null || project.AssignedTile == null || !project.NeedsCitizenWork) continue;
+            // Skip projects that have a courier assigned - citizens should wait
+            if (project.HasCourierAssigned) continue;
             if (!IsFriendlyConstructionProject(project)) continue;
             if (project.AssignedCitizen != null && project.AssignedCitizen != citizen) continue;
             if (project.AssignedTile.OccupyingUnit is Citizen assignedCitizen && assignedCitizen != citizen) continue;

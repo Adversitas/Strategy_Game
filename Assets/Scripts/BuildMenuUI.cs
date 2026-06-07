@@ -17,6 +17,7 @@ public class BuildMenuUI : MonoBehaviour
     private RectTransform  _panel;
     private Text           _coordLabel;
     private GameObject     _buildCityBtn;
+    private GameObject     _buildRoadBtn;
 
     private GridTile  _currentTile;
     private bool      _isOpen;
@@ -90,6 +91,13 @@ public class BuildMenuUI : MonoBehaviour
             Debug.LogWarning("[BuildMenuUI] _buildCityBtn is null!");
         }
 
+        // Road button - show if tile is empty and doesn't already have a road
+        if (_buildRoadBtn != null)
+        {
+            bool canBuildRoad = tile.IsEmpty && !tile.HasRoad;
+            _buildRoadBtn.SetActive(canBuildRoad);
+        }
+
         if (!_isOpen) SlideIn();
     }
 
@@ -135,26 +143,71 @@ public class BuildMenuUI : MonoBehaviour
     }
 
     private void BuildCity()
+    {
+        if (_currentTile == null || cityPrefab == null || !_currentTile.IsEmpty) return;
+        if (!GameplayCommandService.TryBuildCityFromMenu(_currentTile, cityPrefab)) return;
+        
+        // Get the visual center of the tile's sprite
+        SpriteRenderer tileRenderer = _currentTile.GetComponent<SpriteRenderer>();
+        Vector3 spawnPos = tileRenderer != null ? tileRenderer.bounds.center : _currentTile.transform.position;
+        
+        spawnPos.z = -0.1f; // Keep it slightly in front to avoid Z-fighting
+        
+        GameObject cityGO = Instantiate(cityPrefab, spawnPos, Quaternion.identity);
+        TileObjectScale.ApplyTo(cityGO);
+        PlayerOwnership.EnsureLocalOwner(cityGO);
+        City city = cityGO.GetComponent<City>();
+        if (city == null) city = cityGO.AddComponent<City>();
+        
+        city.AssignedTile = _currentTile;
+        _currentTile.OccupyingBuilding = cityGO;
+        SlideOut();
+    }
+
+    private void BuildRoad()
+    {
+        if (_currentTile == null || !_currentTile.IsEmpty || _currentTile.HasRoad) return;
+        
+        // Find a city to queue the road from
+        City nearestCity = FindNearestCity(_currentTile);
+        if (nearestCity == null)
         {
-            if (_currentTile == null || cityPrefab == null || !_currentTile.IsEmpty) return;
-            if (!GameplayCommandService.TryBuildCityFromMenu(_currentTile, cityPrefab)) return;
-            
-            // Get the visual center of the tile's sprite
-            SpriteRenderer tileRenderer = _currentTile.GetComponent<SpriteRenderer>();
-            Vector3 spawnPos = tileRenderer != null ? tileRenderer.bounds.center : _currentTile.transform.position;
-            
-            spawnPos.z = -0.1f; // Keep it slightly in front to avoid Z-fighting
-            
-            GameObject cityGO = Instantiate(cityPrefab, spawnPos, Quaternion.identity);
-            TileObjectScale.ApplyTo(cityGO);
-            PlayerOwnership.EnsureLocalOwner(cityGO);
-            City city = cityGO.GetComponent<City>();
-            if (city == null) city = cityGO.AddComponent<City>();
-            
-            city.AssignedTile = _currentTile;
-            _currentTile.OccupyingBuilding = cityGO;
-            SlideOut();
+            Debug.LogWarning("[BuildMenuUI] No city found to queue road construction!");
+            return;
         }
+        
+        nearestCity.QueueRoad(_currentTile);
+        Debug.Log($"[BuildMenuUI] Queued road at {_currentTile.GridPosition} from city {nearestCity.name}");
+        SlideOut();
+    }
+
+    private City FindNearestCity(GridTile targetTile)
+    {
+        if (AssetRegistry.Instance == null) return null;
+
+        City closestCity = null;
+        int bestDistance = int.MaxValue;
+
+        foreach (City city in AssetRegistry.Instance.Cities)
+        {
+            if (city == null || city.AssignedTile == null) continue;
+            
+            // Check ownership - only use friendly cities
+            PlayerOwnership tileOwnership = PlacementManager.Instance?.GetComponent<PlayerOwnership>();
+            PlayerOwnership cityOwnership = city.GetComponent<PlayerOwnership>();
+            if (tileOwnership != null && cityOwnership != null && tileOwnership.OwnerId != cityOwnership.OwnerId) continue;
+
+            int distance = Mathf.Abs(targetTile.GridPosition.x - city.AssignedTile.GridPosition.x) 
+                         + Mathf.Abs(targetTile.GridPosition.y - city.AssignedTile.GridPosition.y);
+            if (distance < bestDistance)
+            {
+                bestDistance = distance;
+                closestCity = city;
+            }
+        }
+
+        return closestCity;
+    }
 
     private void BuildUI()
     {
@@ -193,6 +246,7 @@ public class BuildMenuUI : MonoBehaviour
         
         // Buttons
         _buildCityBtn = CreateButton(panelGO, "BUILD CITY", BuildCity);
+        _buildRoadBtn = CreateButton(panelGO, "BUILD ROAD (10 prod)", BuildRoad);
         
         // Simple Close
         CreateButton(panelGO, "CLOSE", SlideOut);
