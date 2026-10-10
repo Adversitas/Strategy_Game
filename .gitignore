@@ -51,3 +51,20 @@ crashlytics-build.properties
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+# Unity crash-recovery scenes
+/[Aa]ssets/_Recovery/
+/[Aa]ssets/_Recovery.meta
+/[Aa]ssets/[Pp]refabs/_Recovery/
+/[Aa]ssets/[Pp]refabs/_Recovery.meta
+
+# Per-user editor state
+/[Uu]ser[Ss]ettings/
+
+# Unity Version Control (Plastic) workspace metadata
+/.plastic/
+
+# Embedded copies of registry packages; Unity restores them from Packages/manifest.json
+/Packages/com.unity.*/
+
+*.slnx

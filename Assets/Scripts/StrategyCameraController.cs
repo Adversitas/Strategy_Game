@@ -122,9 +122,8 @@ public class StrategyCameraController : MonoBehaviour
 
     private Vector3 GetMouseWorldPosition()
     {
-        Ray ray = _cam.ScreenPointToRay(Mouse.current.position.ReadValue());
-        Plane groundPlane = new Plane(Vector3.back, Vector3.zero);
-        groundPlane.Raycast(ray, out float enter);
-        return ray.GetPoint(enter);
+        Vector2 mouseScreen = Mouse.current.position.ReadValue();
+        Vector3 screenPos = new Vector3(mouseScreen.x, mouseScreen.y, -_cam.transform.position.z);
+        return _cam.ScreenToWorldPoint(screenPos);
     }
 }

@@ -82,7 +82,7 @@ SpriteRenderer:
   m_SortingLayer: 0
   m_SortingOrder: 0
   m_MaskInteraction: 0
-  m_Sprite: {fileID: -6726512702736656439, guid: fc07f074e23f8a3418fa4b5c2a2843cd, type: 3}
+  m_Sprite: {fileID: -2413806693520163455, guid: a86470a33a6bf42c4b3595704624658b, type: 3}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_FlipX: 0
   m_FlipY: 0
@@ -108,7 +108,6 @@ MonoBehaviour:
   constitution: 1
   dexterity: 1
   charisma: 1
-  isMilitary: 0
   range: 1
   attack: 2
   maxHealth: 2
@@ -117,7 +116,5 @@ MonoBehaviour:
   currentMovementPoints: 1
   morale: 2
   maxInventorySize: 2
-  maxOrderSlots: 1
-  activeOrders: []
   startingGridPosition: {x: 5, y: 5}
   autoMove: 1

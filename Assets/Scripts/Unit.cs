@@ -27,6 +27,7 @@ public class Unit : MonoBehaviour, IGridTarget
 
     [Header("Derived Stats (Calculated)")]
     [SerializeField] protected int attack;
+    [SerializeField] protected int attackBonus;
     [SerializeField] protected int maxHealth;
     [SerializeField] protected int currentHealth;
     [SerializeField] protected float maxMovementPoints;
@@ -496,10 +497,36 @@ public class Unit : MonoBehaviour, IGridTarget
         return 5f / Mathf.Max(1, agility);
     }
 
+
+    /// <summary>
+    /// Applies combat damage. Derived units can modify the incoming amount first.
+    /// </summary>
+    public virtual void TakeDamage(int amount, Unit source = null)
+    {
+        if (amount <= 0 || currentHealth <= 0) return;
+
+        currentHealth = Mathf.Max(0, currentHealth - amount);
+        if (currentHealth > 0) return;
+
+        if (CurrentTile != null && CurrentTile.OccupyingUnit == this)
+        {
+            CurrentTile.OccupyingUnit = null;
+        }
+
+        Destroy(gameObject);
+    }
+
+    /// <summary>
+    /// Turn hook for status effects and cooldowns.
+    /// </summary>
+    protected virtual void OnUnitTurn()
+    {
+        ResetMovement();
+    }
     [ContextMenu("Recalculate Stats")]
     public virtual void CalculateDerivedStats()
     {
-        attack = strength * 2;
+        attack = strength * 2 + attackBonus;
         maxHealth = constitution * 2;
         currentHealth = maxHealth;
         maxMovementPoints = dexterity * 1f;

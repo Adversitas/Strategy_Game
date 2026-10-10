@@ -2,7 +2,11 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
+#if UNITY_EDITOR
+using UnityEditor;
+#endif
 
+[ExecuteAlways]
 public class SquareGridGenerator : MonoBehaviour
 {
     public static SquareGridGenerator Instance { get; private set; }
@@ -21,9 +25,6 @@ public class SquareGridGenerator : MonoBehaviour
     [SerializeField] private Color lightTileColor = new Color(0.26f, 0.65f, 0.31f);
     [SerializeField] private Color darkTileColor  = new Color(0.2f,  0.57f, 0.27f);
 
-    [Header("Hex Settings")]
-    [Range(1.0f, 2.5f)]
-    [SerializeField] private float hexVisualScale = 2.0f;
 
     [Header("Resource Distribution")]
     [Range(0f, 1f)]
@@ -44,7 +45,40 @@ public class SquareGridGenerator : MonoBehaviour
     private GridTile _selectedTile;
     private Sprite _sharedSquareSprite;
     private Transform _board;
+#if UNITY_EDITOR
+    private bool _editorPreviewQueued;
+#endif
 
+
+    private void OnEnable()
+    {
+        QueueEditorPreview();
+    }
+
+    private void OnValidate()
+    {
+        QueueEditorPreview();
+    }
+
+    /// <summary>
+    /// Defers Scene-view generation until Unity has finished validating components.
+    /// </summary>
+    private void QueueEditorPreview()
+    {
+#if UNITY_EDITOR
+        if (Application.isPlaying || !isActiveAndEnabled || _editorPreviewQueued) return;
+
+        _editorPreviewQueued = true;
+        EditorApplication.delayCall += () =>
+        {
+            _editorPreviewQueued = false;
+            if (this == null || Application.isPlaying || !isActiveAndEnabled) return;
+
+            ClearGrid();
+            GenerateGrid();
+        };
+#endif
+    }
     private void Awake()
     {
         Instance = this;
@@ -52,6 +86,8 @@ public class SquareGridGenerator : MonoBehaviour
 
     private void Start()
     {
+        if (!Application.isPlaying) return;
+
         StrategyCameraController ctrl = FindFirstObjectByType<StrategyCameraController>();
         if (ctrl != null) _mainCamera = ctrl.GetComponent<Camera>();
         if (_mainCamera == null) _mainCamera = Camera.main;
@@ -68,7 +104,7 @@ public class SquareGridGenerator : MonoBehaviour
 
     private void Update()
     {
-        if (Mouse.current == null) return;
+        if (!Application.isPlaying || Mouse.current == null) return;
 
         // Prevent clicking through the UI menus
         if ((BuildMenuUI.Instance != null && BuildMenuUI.Instance.IsMouseOverMenu()) || 
@@ -128,9 +164,9 @@ public class SquareGridGenerator : MonoBehaviour
         float yPos = tileSize * (1.5f * gridPos.y);
         
         tileObject.transform.localPosition = new Vector3(xPos, yPos, 0f);
-        // Pointy-top hex height is 2R, width is sqrt(3)R. 
-        // We scale by the visual scale (2.0 is perfect fit).
-        tileObject.transform.localScale    = new Vector3(tileSize * hexVisualScale, tileSize * hexVisualScale, 1f); 
+        // The generated sprite has a radius of one world unit. Scaling it by the
+        // same radius used for axial positioning makes every shared edge align.
+        tileObject.transform.localScale = new Vector3(tileSize, tileSize, 1f);
 
         SpriteRenderer sr  = tileObject.AddComponent<SpriteRenderer>();
         sr.sprite           = _sharedSquareSprite;

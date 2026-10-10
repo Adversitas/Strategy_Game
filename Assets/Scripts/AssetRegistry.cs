@@ -2,7 +2,7 @@ using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// A centralized registry that tracks all player-owned assets (Cities, Facilities, Units).
+/// A centralized registry that tracks all player-owned assets (Cities, Facilities, Units, GoblinDens).
 /// This provides a "Big List" for other systems to reference without searching the scene.
 /// </summary>
 public class AssetRegistry : MonoBehaviour
@@ -14,6 +14,7 @@ public class AssetRegistry : MonoBehaviour
     public List<Market> Markets { get; private set; } = new List<Market>();
     public List<Unit> Units { get; private set; } = new List<Unit>();
     public List<ConstructionProject> ConstructionProjects { get; private set; } = new List<ConstructionProject>();
+    public List<GoblinDen> GoblinDens { get; private set; } = new List<GoblinDen>();
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
     private static void AutoCreate()
@@ -82,5 +83,15 @@ public class AssetRegistry : MonoBehaviour
     public void UnregisterConstructionProject(ConstructionProject cp)
     {
         if (ConstructionProjects.Contains(cp)) ConstructionProjects.Remove(cp);
+    }
+
+    public void RegisterGoblinDen(GoblinDen den)
+    {
+        if (!GoblinDens.Contains(den)) GoblinDens.Add(den);
+    }
+
+    public void UnregisterGoblinDen(GoblinDen den)
+    {
+        if (GoblinDens.Contains(den)) GoblinDens.Remove(den);
     }
 }

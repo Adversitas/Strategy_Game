@@ -84,6 +84,38 @@ public class City : MonoBehaviour, IGridTarget
     private void Start()
     {
         if (AssetRegistry.Instance != null) AssetRegistry.Instance.RegisterCity(this);
+        FitSpriteToTile();
+    }
+
+    /// <summary>
+    /// Scales the City GameObject so that its sprite fills the assigned hex tile.
+    /// Uses the tile's SpriteRenderer bounds as the reference size.
+    /// </summary>
+    public void FitSpriteToTile()
+    {
+        if (assignedTile == null) return;
+
+        SpriteRenderer tileSr = assignedTile.GetComponent<SpriteRenderer>();
+        SpriteRenderer citySr = GetComponent<SpriteRenderer>();
+        if (tileSr == null || citySr == null || citySr.sprite == null) return;
+
+        // Get the world-space size of the tile and the city sprite at current scale
+        Vector3 tileSize = tileSr.bounds.size;
+        
+        // Reset scale to 1 to measure the sprite's natural world size
+        Vector3 originalScale = transform.localScale;
+        transform.localScale = Vector3.one;
+        Vector3 spriteSize = citySr.bounds.size;
+        transform.localScale = originalScale;
+
+        if (spriteSize.x <= 0f || spriteSize.y <= 0f) return;
+
+        // Scale to fit within the tile, preserving aspect ratio
+        float scaleX = tileSize.x / spriteSize.x;
+        float scaleY = tileSize.y / spriteSize.y;
+        float uniformScale = Mathf.Min(scaleX, scaleY);
+
+        transform.localScale = new Vector3(uniformScale, uniformScale, 1f);
     }
 
     private void OnDestroy()
