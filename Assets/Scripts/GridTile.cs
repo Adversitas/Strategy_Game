@@ -122,16 +122,27 @@ public class GridTile : MonoBehaviour
         return transform.position;
     }
 
+    /// <summary>
+    /// Redraws this tile's road and its direct neighbours' roads. A tile's road shape only
+    /// depends on its neighbours, so nothing beyond the first ring can change.
+    /// </summary>
     private void RefreshRoadVisual()
     {
-        RefreshRoadVisual(new HashSet<GridTile>());
+        UpdateOwnRoadVisual();
+
+        if (SquareGridGenerator.Instance == null) return;
+
+        foreach (GridTile neighbor in SquareGridGenerator.Instance.GetNeighbors(this))
+        {
+            if (neighbor != null)
+            {
+                neighbor.UpdateOwnRoadVisual();
+            }
+        }
     }
 
-    private void RefreshRoadVisual(HashSet<GridTile> visited)
+    private void UpdateOwnRoadVisual()
     {
-        if (visited == null) return;
-        if (!visited.Add(this)) return;
-
         bool shouldRenderRoad = HasRoad || (HasBuilding && HasAdjacentRoad());
 
         if (!shouldRenderRoad)
@@ -157,21 +168,6 @@ public class GridTile : MonoBehaviour
         {
             _road.Configure(this);
         }
-
-        RefreshAdjacentRoadVisuals(visited);
-    }
-
-    private void RefreshAdjacentRoadVisuals(HashSet<GridTile> visited)
-    {
-        if (SquareGridGenerator.Instance == null) return;
-
-        foreach (GridTile neighbor in SquareGridGenerator.Instance.GetNeighbors(this))
-        {
-            if (neighbor != null)
-            {
-                neighbor.RefreshRoadVisual(visited);
-            }
-        }
     }
 
     private bool HasAdjacentRoad()
@@ -191,12 +187,11 @@ public class GridTile : MonoBehaviour
 
     private void OnMouseEnter()
     {
-        Debug.Log($"[GridTile] Mouse entered: {GridPosition}");
-        PlacementManager.Instance.SetHoveredTile(this);
+        if (PlacementManager.Instance != null) PlacementManager.Instance.SetHoveredTile(this);
     }
 
     private void OnMouseExit()
     {
-        PlacementManager.Instance.SetHoveredTile(null);
+        if (PlacementManager.Instance != null) PlacementManager.Instance.SetHoveredTile(null);
     }
 }

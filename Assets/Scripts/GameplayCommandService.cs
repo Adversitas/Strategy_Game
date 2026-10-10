@@ -127,11 +127,8 @@ public static class GameplayCommandService
             return false;
         }
 
-        if (unitName == "Citizen")
-        {
-            city.RegisterCitizen();
-            if (unit is Citizen citizen) citizen.SetHomeCity(city);
-        }
+        // SetHomeCity also counts the citizen against the city's capacity.
+        if (unit is Citizen citizen) citizen.SetHomeCity(city);
         if (unit is Courier courier) courier.OriginCity = city;
 
         unit.PlaceOnTile(spawnTile);

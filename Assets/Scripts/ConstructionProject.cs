@@ -126,6 +126,10 @@ public class ConstructionProject : MonoBehaviour, IGridTarget
             Market market = resultGO.GetComponent<Market>();
             if (market != null) market.Initialize(assignedTile);
 
+            // Without a tile, a facility never finds its road link to a city and never produces.
+            Facility facility = resultGO.GetComponent<Facility>();
+            if (facility != null) facility.AssignedTile = assignedTile;
+
             Debug.Log($"[ConstructionProject] Completed {resultPrefab.name} at {assignedTile.GridPosition}");
         }
 

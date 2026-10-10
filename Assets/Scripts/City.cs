@@ -177,7 +177,9 @@ public class City : MonoBehaviour, IGridTarget
 
     public bool HasCitizenCapacity()
     {
-        return currentCitizens < citizenCapacity;
+        // Citizens still in the production queue already claim a slot.
+        int queuedCitizens = _unitProductionQueue.Count(entry => entry.unitName == "Citizen");
+        return currentCitizens + queuedCitizens < citizenCapacity;
     }
 
     public void RegisterCitizen()

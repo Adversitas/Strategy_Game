@@ -110,13 +110,16 @@ public class StrategyCameraController : MonoBehaviour
     {
         if (Mouse.current == null) return;
 
-        float scrollInput = Mouse.current.scroll.ReadValue().y / 120f;
+        // The Input System normalizes wheel deltas (about ±1 per notch) by default, and scroll is a
+        // per-frame event amount, so it must not be divided by 120 or scaled by deltaTime.
+        float scrollInput = Mouse.current.scroll.ReadValue().y;
         if (Mathf.Approximately(scrollInput, 0f))
         {
             return;
         }
 
-        _cam.orthographicSize -= scrollInput * zoomSpeed * Time.deltaTime;
+        // zoomSpeed = 12 gives 1.2 units of orthographic size per wheel notch.
+        _cam.orthographicSize -= scrollInput * zoomSpeed * 0.1f;
         _cam.orthographicSize = Mathf.Clamp(_cam.orthographicSize, minZoom, maxZoom);
     }
 

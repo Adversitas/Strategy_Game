@@ -100,31 +100,8 @@ public class PlacementManager : MonoBehaviour
             return;
         }
 
-        // Manual Raycast to avoid OnMouseEnter discrepancies
-        GridTile hoveredTile = null;
-        Camera[] allCams = Camera.allCameras.OrderByDescending(c => c.depth).ToArray();
-        Vector2 mousePos = Mouse.current.position.ReadValue();
-
-        // 1. Try to find the camera with the StrategyCameraController first
-        Camera cam = allCams.FirstOrDefault(c => c.GetComponent("StrategyCameraController") != null);
-        
-        // 2. If not found, fall back to the highest depth camera
-        if (cam == null) cam = allCams.FirstOrDefault(c => c.enabled);
-
-        if (cam != null)
-        {
-            Ray ray = cam.ScreenPointToRay(mousePos);
-            RaycastHit2D hit = Physics2D.GetRayIntersection(ray);
-            
-            if (hit.collider != null)
-            {
-                hoveredTile = hit.collider.GetComponent<GridTile>();
-                if (hoveredTile != null && Time.frameCount % 60 == 0)
-                {
-                    Debug.Log($"[PlacementManager] Hit via {cam.name} at {hoveredTile.GridPosition}");
-                }
-            }
-        }
+        // Hex-math picking; the tiles' square colliders overlap and pick the wrong tile near edges.
+        GridTile hoveredTile = SquareGridGenerator.Instance != null ? SquareGridGenerator.Instance.GetTileAtMouse() : null;
 
         if (hoveredTile != null)
         {

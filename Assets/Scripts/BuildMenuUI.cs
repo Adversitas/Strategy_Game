@@ -145,6 +145,9 @@ public class BuildMenuUI : MonoBehaviour
             spawnPos.z = -0.1f; // Keep it slightly in front to avoid Z-fighting
             
             GameObject cityGO = Instantiate(cityPrefab, spawnPos, Quaternion.identity);
+            TileObjectScale.ApplyTo(cityGO);
+            // Same setup as the starting city: without an owner, owned units treat it as foreign.
+            PlayerOwnership.EnsureLocalOwner(cityGO);
             City city = cityGO.GetComponent<City>();
             if (city == null) city = cityGO.AddComponent<City>();
             

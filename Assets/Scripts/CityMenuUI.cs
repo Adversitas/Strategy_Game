@@ -98,10 +98,12 @@ public class CityMenuUI : MonoBehaviour
 
     private void HandleTileSelected(GridTile tile)
     {
-        if (tile != null && tile.HasBuilding)
+        // Only cities open this menu; facilities, markets and construction sites have no City component.
+        City city = tile != null && tile.HasBuilding ? tile.OccupyingBuilding.GetComponent<City>() : null;
+        if (city != null)
         {
-            _currentCity = tile.OccupyingBuilding.GetComponent<City>();
-            if (_currentCity != null && _currentCity.AssignedTile == null)
+            _currentCity = city;
+            if (_currentCity.AssignedTile == null)
             {
                 _currentCity.AssignedTile = tile;
             }
@@ -134,37 +136,15 @@ public class CityMenuUI : MonoBehaviour
 
     private void ProduceUnit(GameObject prefab, float cost, string unitName, bool isProduction)
     {
-        float currentRes = isProduction ? _currentCity.ProductionStockpile : _currentCity.FoodStockpile;
-        Debug.Log($"[CityMenuUI] Produce {unitName} clicked. City: {_currentCity?.name}, Prefab: {prefab?.name}, Res: {currentRes}");
-        
+        if (_currentCity == null || prefab == null) return;
+
         bool canAfford = isProduction ? _currentCity.CanAffordProduction(cost) : _currentCity.CanAffordFood(cost);
-        if (_currentCity == null || prefab == null || !canAfford) return;
+        Debug.Log($"[CityMenuUI] Produce {unitName} clicked. City: {_currentCity.name}, Prefab: {prefab.name}, CanAfford: {canAfford}");
+        if (!canAfford) return;
 
-        // Ensure the tile isn't already occupied by a unit
-        if (_currentCity.AssignedTile != null && _currentCity.AssignedTile.HasUnit)
-        {
-            Debug.LogWarning($"Cannot produce {unitName}: Tile already occupied by a unit.");
-            return;
-        }
-
-        GameObject unitGO = Instantiate(prefab);
-        unitGO.name = unitName; // Cleaner name
-        Unit unit = unitGO.GetComponent<Unit>();
-        
-        if (unit != null && _currentCity.AssignedTile != null)
-        {
-            if (isProduction) _currentCity.DeductProduction(cost);
-            else _currentCity.DeductFood(cost);
-            
-            if (unitName == "Citizen") _currentCity.RegisterCitizen();
-            
-            unit.PlaceOnTile(_currentCity.AssignedTile);
-        }
-        else
-        {
-            if (unitGO != null) Destroy(unitGO);
-            Debug.LogError($"{unitName} production failed: Missing Unit component or AssignedTile.");
-        }
+        // Go through the city's production queue so the unit inherits the city's owner,
+        // gets its home city set, and spawns on a free neighbouring tile.
+        GameplayCommandService.TryProduceUnit(_currentCity, prefab, cost, unitName, isProduction);
     }
 
     private void SlideIn()

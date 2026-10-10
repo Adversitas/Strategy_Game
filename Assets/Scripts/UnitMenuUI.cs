@@ -70,13 +70,20 @@ public class UnitMenuUI : MonoBehaviour
         {
             UpdateUI();
         }
+        else if (_isOpen)
+        {
+            // The selected unit was destroyed.
+            SlideOut();
+        }
     }
 
     private void HandleTileSelected(GridTile tile)
     {
-        if (tile != null && tile.HasUnit)
+        // Couriers are tracked separately on the tile so they don't block friendly units.
+        Unit unitOnTile = tile == null ? null : tile.HasUnit ? tile.OccupyingUnit : tile.OccupyingCourier;
+        if (unitOnTile != null)
         {
-            _selectedUnit = tile.OccupyingUnit;
+            _selectedUnit = unitOnTile;
             _unitNameLabel.text = _selectedUnit.name.Replace("(Clone)", "").ToUpper();
             
             // Debug log to help troubleshoot build conditions
@@ -235,6 +242,7 @@ public class UnitMenuUI : MonoBehaviour
         if (facility == null) facility = facilityGO.AddComponent<Facility>();
 
         facility.AssignedTile = _selectedUnit.CurrentTile;
+        PlayerOwnership.Inherit(facilityGO, _selectedUnit);
         _selectedUnit.CurrentTile.OccupyingBuilding = facilityGO;
 
         Debug.Log($"[UnitMenuUI] Citizen {_selectedUnit.name} successfully built a Facility on {_selectedUnit.CurrentTile.GridPosition}");

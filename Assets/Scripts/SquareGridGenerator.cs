@@ -45,6 +45,8 @@ public class SquareGridGenerator : MonoBehaviour
     private GridTile _selectedTile;
     private Sprite _sharedSquareSprite;
     private Transform _board;
+    private Vector2 _rightPressPosition;
+    private const float RightClickMaxDragPixels = 6f;
 #if UNITY_EDITOR
     private bool _editorPreviewQueued;
 #endif
@@ -106,6 +108,13 @@ public class SquareGridGenerator : MonoBehaviour
     {
         if (!Application.isPlaying || Mouse.current == null) return;
 
+        // Right-drag pans the camera, so only a right *click* (released without moving) opens the build menu.
+        // Track the press before the menu check so a stale position is never compared.
+        if (Mouse.current.rightButton.wasPressedThisFrame)
+        {
+            _rightPressPosition = Mouse.current.position.ReadValue();
+        }
+
         // Prevent clicking through the UI menus
         if ((BuildMenuUI.Instance != null && BuildMenuUI.Instance.IsMouseOverMenu()) || 
             (CityMenuUI.Instance != null && CityMenuUI.Instance.IsMouseOverMenu()) ||
@@ -119,7 +128,8 @@ public class SquareGridGenerator : MonoBehaviour
             TrySelectTileAtMousePosition();
         }
 
-        if (Mouse.current.rightButton.wasPressedThisFrame)
+        if (Mouse.current.rightButton.wasReleasedThisFrame &&
+            (Mouse.current.position.ReadValue() - _rightPressPosition).sqrMagnitude <= RightClickMaxDragPixels * RightClickMaxDragPixels)
         {
             TryOpenBuildMenuAtMousePosition();
         }
@@ -249,23 +259,14 @@ public class SquareGridGenerator : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// Returns the tile under the mouse using exact hex math. Physics picking is unreliable
+    /// here because each tile's BoxCollider2D is a square that overlaps its neighbours.
+    /// </summary>
     public GridTile GetTileAtMouse()
     {
-        if (Camera.main == null || Mouse.current == null) return null;
-        
-        Ray ray = Camera.main.ScreenPointToRay(Mouse.current.position.ReadValue());
-        Plane groundPlane = new Plane(Vector3.back, Vector3.zero); // Plane at z=0 facing the camera
-        
-        if (groundPlane.Raycast(ray, out float enter))
-        {
-            Vector3 worldPos = ray.GetPoint(enter);
-            Collider2D hit = Physics2D.OverlapPoint(worldPos);
-            if (hit != null)
-            {
-                return hit.GetComponent<GridTile>();
-            }
-        }
-        return null;
+        if (Mouse.current == null) return null;
+        return GetTileAtMousePosition();
     }
 
     public List<GridTile> GetNeighbors(GridTile tile)

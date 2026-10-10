@@ -38,6 +38,11 @@ public class Citizen : Unit
     private City _productionSourceCity;
 
     private const float RoadProductionCost = 10f;
+    private const float FriendlySwapDelay = 3f;
+
+    private Unit _blockingUnit;
+    private float _blockedSinceTime;
+    private float _lastBlockedCheckTime;
 
     public float CarriedProduction => carriedProduction;
     public float MaxCarryingCapacity => maxCarryingCapacity;
@@ -56,9 +61,24 @@ public class Citizen : Unit
         base.Awake();
     }
 
+    /// <summary>
+    /// Assigns the home city and keeps each city's citizen count in sync.
+    /// </summary>
     public void SetHomeCity(City city)
     {
+        if (homeCity == city) return;
+
+        if (homeCity != null) homeCity.UnregisterCitizen();
         homeCity = city;
+        if (homeCity != null) homeCity.RegisterCitizen();
+    }
+
+    protected override void OnDestroy()
+    {
+        // Free the population slot and any construction project this citizen had claimed.
+        if (homeCity != null) homeCity.UnregisterCitizen();
+        if (_activeConstructionProject != null) _activeConstructionProject.ReleaseCitizen(this);
+        base.OnDestroy();
     }
 
     public void StartConstruction(GridTile tile, GameObject constructionPrefab, GameObject targetPrefab = null)
@@ -151,6 +171,11 @@ public class Citizen : Unit
 
                             if (IsFriendly(other))
                             {
+                                if (TrySwapWithBlockingCitizen(other, nextStep))
+                                {
+                                    yield return new WaitForSeconds(0.4f);
+                                    continue;
+                                }
                                 Debug.Log($"[Citizen] {name} waiting for friendly unit {other.name} to clear {nextStep.GridPosition}");
                                 yield return new WaitForSeconds(0.5f);
                                 continue;
@@ -295,6 +320,11 @@ public class Citizen : Unit
 
                             if (IsFriendly(other))
                             {
+                                if (TrySwapWithBlockingCitizen(other, nextStep))
+                                {
+                                    yield return new WaitForSeconds(0.4f);
+                                    continue;
+                                }
                                 Debug.Log($"[Citizen] {name} waiting for friendly unit {other.name} at {nextStep.GridPosition} before delivering.");
                                 yield return new WaitForSeconds(0.5f);
                                 continue;
@@ -429,6 +459,11 @@ public class Citizen : Unit
 
                             if (IsFriendly(other))
                             {
+                                if (TrySwapWithBlockingCitizen(other, nextStep))
+                                {
+                                    yield return new WaitForSeconds(0.4f);
+                                    continue;
+                                }
                                 yield return new WaitForSeconds(0.5f);
                                 continue;
                             }
@@ -628,6 +663,36 @@ public class Citizen : Unit
             CurrentTile.AddRoad();
             Debug.Log($"{name} built a road at {CurrentTile.GridPosition}");
         }
+    }
+
+    /// <summary>
+    /// Roads are one tile wide, so two citizens heading opposite ways (or one idling on a road)
+    /// would otherwise wait on each other forever. After being blocked by the same friendly
+    /// citizen for a while, trade places with it.
+    /// </summary>
+    private bool TrySwapWithBlockingCitizen(Unit other, GridTile nextStep)
+    {
+        // Never pull a citizen off a building tile (it may be working a construction project there).
+        if (!(other is Citizen) || !IsFriendly(other) || nextStep == null || nextStep.HasBuilding) return false;
+
+        // Restart the wait if the blocker changed or we haven't been waiting continuously.
+        if (other != _blockingUnit || Time.time - _lastBlockedCheckTime > 1f)
+        {
+            _blockingUnit = other;
+            _blockedSinceTime = Time.time;
+        }
+        _lastBlockedCheckTime = Time.time;
+
+        if (Time.time - _blockedSinceTime < FriendlySwapDelay) return false;
+
+        float cost = GetMovementCost(CurrentTile, nextStep);
+        if (currentMovementPoints < cost) return false;
+
+        currentMovementPoints -= cost;
+        SwapWith(other);
+        _blockingUnit = null;
+        Debug.Log($"[Citizen] {name} swapped places with blocking citizen {other.name} at {nextStep.GridPosition}");
+        return true;
     }
 
     private bool TryEnterConstructionProjectTile(GridTile nextStep, GridTile targetTile, float cost)

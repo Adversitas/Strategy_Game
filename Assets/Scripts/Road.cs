@@ -10,6 +10,7 @@ public class Road : MonoBehaviour
     private const float JunctionRadius = 0.07f;
 
     private static readonly Color RoadColor = new Color(0.33f, 0.33f, 0.36f, 1f);
+    private static Material _sharedMaterial;
 
     private GridTile _tile;
 
@@ -98,7 +99,9 @@ public class Road : MonoBehaviour
         line.numCapVertices = 12;
         line.numCornerVertices = 16;
         line.sortingOrder = 0;
-        line.material = new Material(Shader.Find("Sprites/Default"));
+        // One shared material: creating one per segment leaked a Material on every redraw.
+        if (_sharedMaterial == null) _sharedMaterial = new Material(Shader.Find("Sprites/Default"));
+        line.sharedMaterial = _sharedMaterial;
         line.startColor = RoadColor;
         line.endColor = RoadColor;
     }

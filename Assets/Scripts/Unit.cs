@@ -50,6 +50,8 @@ public class Unit : MonoBehaviour, IGridTarget
     [SerializeField] private Vector2Int startingGridPosition;
     [SerializeField] protected bool autoMove = true;
 
+    private float _turnTimer;
+
     // Current location on the grid
     public GridTile CurrentTile { get; protected set; }
 
@@ -83,6 +85,17 @@ public class Unit : MonoBehaviour, IGridTarget
     protected virtual void Update()
     {
         RegenerateMovementOverTime(Time.deltaTime);
+        TickTurn(Time.deltaTime);
+    }
+
+    private void TickTurn(float deltaTime)
+    {
+        float turnDuration = GetTurnDuration();
+        _turnTimer += deltaTime;
+        if (_turnTimer < turnDuration) return;
+
+        _turnTimer -= turnDuration;
+        OnUnitTurn();
     }
 
     protected virtual void Start()
@@ -129,10 +142,15 @@ public class Unit : MonoBehaviour, IGridTarget
 
             if (isMilitary)
             {
+                Unit previousEnemy = detectedEnemy;
                 detectedEnemy = FindVisibleEnemy();
                 if (detectedEnemy != null)
                 {
-                    Debug.Log($"[Unit] {name} spotted enemy {detectedEnemy.name} at {detectedEnemy.CurrentTile.GridPosition}");
+                    // Log only when a new enemy is spotted; this loop runs every 0.1s.
+                    if (detectedEnemy != previousEnemy)
+                    {
+                        Debug.Log($"[Unit] {name} spotted enemy {detectedEnemy.name} at {detectedEnemy.CurrentTile.GridPosition}");
+                    }
                     continue;
                 }
             }
@@ -145,16 +163,6 @@ public class Unit : MonoBehaviour, IGridTarget
             if (CurrentTile == null || currentMovementPoints < 0.5f)
             {
                 continue;
-            }
-
-            if (isMilitary)
-            {
-                detectedEnemy = FindVisibleEnemy();
-                if (detectedEnemy != null)
-                {
-                    Debug.Log($"[Unit] {name} spotted enemy {detectedEnemy.name} at {detectedEnemy.CurrentTile.GridPosition}");
-                    continue;
-                }
             }
 
             List<GridTile> validNeighbors = new List<GridTile>();
@@ -517,11 +525,12 @@ public class Unit : MonoBehaviour, IGridTarget
     }
 
     /// <summary>
-    /// Turn hook for status effects and cooldowns.
+    /// Turn hook for status effects and cooldowns. Called once per GetTurnDuration().
+    /// Movement is not reset here: it already regenerates continuously in Update,
+    /// so a reset would hand busy units an extra turn of movement.
     /// </summary>
     protected virtual void OnUnitTurn()
     {
-        ResetMovement();
     }
     [ContextMenu("Recalculate Stats")]
     public virtual void CalculateDerivedStats()
